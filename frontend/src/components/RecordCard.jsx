@@ -248,11 +248,13 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
   };
 
   return (
-    <div className="card">
+    <div className={`card${record.access_level ? ` access-panel access-border-${record.access_level}` : ""}`}>
+      {record.access_level && (
+        <span className={`access-badge access-${record.access_level} field-corner-badge`}>{record.access_level}</span>
+      )}
       <div className="card-header">
         <h2>{locked ? "🔒 Личная запись" : title || "(без заголовка)"}</h2>
         <span className="dept-badge">{ZONE_LABELS[record.zone]}</span>
-        {record.access_level && <span className="count-badge">{record.access_level}</span>}
         {record.status === "hidden" && <span className="count-badge">Скрыта</span>}
       </div>
       {locked && (

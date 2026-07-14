@@ -36,6 +36,19 @@
   --radius-lg:    12px;
   --shadow:       0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
   --shadow-md:    0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+
+  /* Access-class ramp G < F < E < D < C < B < A < S - identical to
+     Dominex's own app/static/css/app.css so a record's access level
+     reads the same way across the whole ecosystem, not a
+     similar-but-different palette. */
+  --access-G-bg: #f1f5f9; --access-G-text: #475569; --access-G-border: #94a3b8;
+  --access-F-bg: #f8fafc; --access-F-text: #334155; --access-F-border: #cbd5e1;
+  --access-E-bg: #f0fdf4; --access-E-text: #15803d; --access-E-border: #22c55e;
+  --access-D-bg: #eff6ff; --access-D-text: #1d4ed8; --access-D-border: #3b82f6;
+  --access-C-bg: #f5f3ff; --access-C-text: #6d28d9; --access-C-border: #8b5cf6;
+  --access-B-bg: #fff7ed; --access-B-text: #c2410c; --access-B-border: #f97316;
+  --access-A-bg: #fefce8; --access-A-text: #a16207; --access-A-border: #eab308;
+  --access-S-bg: #fef2f2; --access-S-text: #b91c1c; --access-S-border: #ef4444;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,6 +74,15 @@
     --error-bdr:    #7f1d1d;
     --warn-bg:      #27180a;
     --warn-bdr:     #92400e;
+
+    --access-G-bg: #1e293b; --access-G-text: #cbd5e1; --access-G-border: #64748b;
+    --access-F-bg: #1e293b; --access-F-text: #94a3b8; --access-F-border: #475569;
+    --access-E-bg: #052e16; --access-E-text: #4ade80; --access-E-border: #22c55e;
+    --access-D-bg: #1e3a5f; --access-D-text: #93c5fd; --access-D-border: #3b82f6;
+    --access-C-bg: #2e1065; --access-C-text: #c4b5fd; --access-C-border: #8b5cf6;
+    --access-B-bg: #27180a; --access-B-text: #fdba74; --access-B-border: #f97316;
+    --access-A-bg: #27200a; --access-A-text: #fde047; --access-A-border: #eab308;
+    --access-S-bg: #2d0a0a; --access-S-text: #fca5a5; --access-S-border: #ef4444;
   }
 }
 
@@ -215,12 +237,65 @@ a:hover { text-decoration: underline; }
 
 /* ─── Cards ───────────────────────────────────────────────── */
 .card {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   margin-bottom: 20px;
   box-shadow: var(--shadow);
+}
+
+/* ─── Access-class badge + stripe (matches Dominex's own
+   .access-badge/.field-corner-badge/.access-border-* exactly - see
+   app/static/css/app.css there) - top-left corner badge plus a colored
+   left border on the card itself, same convention everywhere a record's
+   access level is shown. ───────────────────────────────────────────── */
+.access-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.access-G { background: var(--access-G-bg); border-color: var(--access-G-border); color: var(--access-G-text); }
+.access-F { background: var(--access-F-bg); border-color: var(--access-F-border); color: var(--access-F-text); }
+.access-E { background: var(--access-E-bg); border-color: var(--access-E-border); color: var(--access-E-text); }
+.access-D { background: var(--access-D-bg); border-color: var(--access-D-border); color: var(--access-D-text); }
+.access-C { background: var(--access-C-bg); border-color: var(--access-C-border); color: var(--access-C-text); }
+.access-B { background: var(--access-B-bg); border-color: var(--access-B-border); color: var(--access-B-text); }
+.access-A { background: var(--access-A-bg); border-color: var(--access-A-border); color: var(--access-A-text); }
+.access-S { background: var(--access-S-bg); border-color: var(--access-S-border); color: var(--access-S-text); }
+
+.access-panel { border-left-width: 4px; }
+
+.access-border-G { border-left-color: var(--access-G-border); }
+.access-border-F { border-left-color: var(--access-F-border); }
+.access-border-E { border-left-color: var(--access-E-border); }
+.access-border-D { border-left-color: var(--access-D-border); }
+.access-border-C { border-left-color: var(--access-C-border); }
+.access-border-B { border-left-color: var(--access-B-border); }
+.access-border-A { border-left-color: var(--access-A-border); }
+.access-border-S { border-left-color: var(--access-S-border); }
+
+.field-corner-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 1px 6px;
+  font-size: 11px;
+  box-shadow: 0 0 0 2px var(--bg-card);
+  z-index: 1;
 }
 
 .card-header {
