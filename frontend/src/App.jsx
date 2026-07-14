@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { api, SSO_LOGIN_URL } from "./api.js";
+import { api, SSO_LOGIN_URL, SSOD_ACCOUNT_URL, SSOD_SITE_URL } from "./api.js";
 import Layout from "./components/Layout.jsx";
 import { PersonalKeyProvider } from "./crypto/PersonalKeyContext.jsx";
 import AuthorProfile from "./pages/AuthorProfile.jsx";
@@ -35,14 +35,23 @@ export default function App() {
         <div className="auth-wrap">
           <div className="auth-card">
             <div className="auth-header">
+              <img className="auth-logo" src="/biographia-logo.png" alt="Biographia" />
               <div>
                 <div className="auth-org">Biographia</div>
                 <div className="auth-subtitle">Модуль экосистемы SSOD/Dominex</div>
               </div>
             </div>
-            <a className="btn btn-primary btn-full" href={SSO_LOGIN_URL}>
-              Войти через ССОД
-            </a>
+            <div className="auth-form">
+              <a className="btn btn-primary btn-full" href={SSO_LOGIN_URL}>
+                Войти через ССОД
+              </a>
+              <a className="btn btn-secondary btn-full" href={SSOD_ACCOUNT_URL}>
+                Личный кабинет ССОД
+              </a>
+              <a className="btn btn-secondary btn-full" href={SSOD_SITE_URL}>
+                На сайт SSOD.pro
+              </a>
+            </div>
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ export default function Layout({ viewer, children }) {
     <div className="layout">
       <aside className="sidebar">
         <div className="sidebar-header">
+          <img className="sidebar-logo" src="/biographia-logo.png" alt="Biographia" />
           <span style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Biographia</span>
         </div>
         <nav className="sidebar-nav">

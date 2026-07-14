@@ -32,6 +32,7 @@ export default defineConfig({
       "/health": "http://biographia_app:5000",
       "/records": "http://biographia_app:5000",
       "/entities": "http://biographia_app:5000",
+      "/users": "http://biographia_app:5000",
       "/attachments": "http://biographia_app:5000",
       "/logout": "http://biographia_app:5000",
       "/crypto": "http://biographia_app:5000",

@@ -6,7 +6,14 @@ from app.core import dominex_client, storage
 from app.core.access import access_rank, stricter_access_class
 from app.core.auth import require_session
 from app.extensions import db
-from app.models import Attachment, BiographyRecord, BiographyRecordVersion, RecordType, Zone
+from app.models import (
+    Attachment,
+    BiographyRecord,
+    BiographyRecordOwnershipChange,
+    BiographyRecordVersion,
+    RecordType,
+    Zone,
+)
 from app.records import records_bp
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB - plain sanity cap, not from TZ; revisit once real media sizes are known
@@ -21,6 +28,11 @@ def can_view_record(record, viewer):
     admin only their own org) since that's already what
     admin_scope_organization_id() means on the Dominex side - not
     re-confirmed word-for-word with the user, flagged in the TZ."""
+    if record.status == "hidden" and viewer.get("role") != "superadmin" and record.owner_username != viewer.get(
+        "username"
+    ):
+        return False
+
     if record.zone == Zone.PERSONAL:
         return record.author_username == viewer.get("username")
 
@@ -39,16 +51,23 @@ def can_view_record(record, viewer):
 
 
 def can_edit_record(record, viewer):
-    """Narrower than can_view_record on purpose - being able to *see* an
-    official record (by rank/org-membership) never implies being able to
-    add a version to it. Only the author, or a superadmin as an
-    administrative override (mirrors Dominex's own unrestricted-SUPERADMIN
-    pattern), may edit or attach files. Not explicitly spelled out in the
-    TZ for records - reasonable default given "официальная, авторская...
-    запись" (section 1), flagged rather than silently assumed elsewhere."""
+    """Whether this viewer can mutate the record DIRECTLY (apply an edit
+    immediately, reassign the owner, change access_level, hide/unhide) -
+    narrower than can_view_record on purpose, being able to *see* an
+    official record never implies being able to change it. Gated by
+    ownership ("Владелец/Ответственный"), not authorship - the two start
+    out equal at creation (see create_record) but the author role never
+    changes while ownership can be reassigned. A superadmin always
+    qualifies too (administrative override, mirrors Dominex's own
+    unrestricted-SUPERADMIN pattern) - including for the owner-rank
+    ceiling on access_level, which is checked separately against the
+    *owner's* rank, not the superadmin's own (see _validate_access_level).
+    Someone who can view but not edit directly doesn't get 403 on
+    /records/<id>/edit though - see record_edit(), their edit becomes a
+    pending proposal instead."""
     if viewer.get("role") == "superadmin":
         return True
-    return record.author_username == viewer.get("username")
+    return record.owner_username == viewer.get("username")
 
 
 def _record_payload(record):
@@ -66,9 +85,13 @@ def _record_payload(record):
         "nonce": record.nonce,
         "author_username": record.author_username,
         "author_display_name": record.author_display_name,
+        "owner_username": record.owner_username,
+        "owner_display_name": record.owner_display_name,
+        "status": record.status,
         "created_at": record.created_at.isoformat(),
         "updated_at": record.updated_at.isoformat(),
-        "version_count": len(record.versions),
+        "version_count": len([v for v in record.versions if v.status == "applied"]),
+        "pending_count": len([v for v in record.versions if v.status == "pending"]),
         "attachments": [_attachment_payload(a) for a in record.attachments],
     }
 
@@ -90,6 +113,18 @@ def _fetch_bound_entity(entity_kind, entity_id):
         return dominex_client.fetch_entity(entity_id)
     if entity_kind == "organization":
         return dominex_client.fetch_organization(entity_id)
+    return None
+
+
+def _validate_access_level_ceiling(access_level, owner_access_class):
+    """"Ранг доступа не может быть выше ранга владельца" - checked against
+    the CURRENT owner's own access_class, not whoever is making the
+    change (a superadmin reassigning access_level on someone else's
+    record is still capped by that record's owner - if a higher rank is
+    needed, reassign ownership first, per the user's own worked example).
+    Returns an error string, or None if the level is acceptable."""
+    if owner_access_class and access_rank(access_level) > access_rank(owner_access_class):
+        return "access_level_exceeds_owner_rank"
     return None
 
 
@@ -172,6 +207,14 @@ def create_record():
         if zone != Zone.PERSONAL and entity_class:
             access_level = stricter_access_class(access_level, entity_class)
 
+    if zone != Zone.PERSONAL:
+        # Owner == author at creation (see below), so the ceiling is the
+        # viewer's own rank - no Dominex round-trip needed here, unlike
+        # record_edit()/reassign_owner() where the owner may be someone else.
+        ceiling_error = _validate_access_level_ceiling(access_level, viewer.get("access_class"))
+        if ceiling_error:
+            return jsonify({"ok": False, "error": ceiling_error}), 400
+
     record = BiographyRecord(
         entity_kind=entity_kind,
         entity_id=entity_id,
@@ -185,6 +228,8 @@ def create_record():
         nonce=nonce,
         author_username=viewer["username"],
         author_display_name=viewer.get("display_name"),
+        owner_username=viewer["username"],
+        owner_display_name=viewer.get("display_name"),
     )
     db.session.add(record)
     db.session.flush()
@@ -224,9 +269,11 @@ def record_detail(record_id):
             "nonce": v.nonce,
             "record_type": v.record_type,
             "author_username": v.author_username,
+            "status": v.status,
             "created_at": v.created_at.isoformat(),
         }
         for v in record.versions
+        if v.status != "rejected" or can_edit_record(record, viewer)
     ]
     return jsonify(payload)
 
@@ -234,19 +281,22 @@ def record_detail(record_id):
 @records_bp.post("/records/<int:record_id>/edit")
 def record_edit(record_id):
     """Append-only edit - never overwrites history, always adds a new
-    version (TZ 6.2: "правка создаёт новую версию с историей")."""
+    version (TZ 6.2: "правка создаёт новую версию с историей"). Whether it
+    applies immediately or waits for approval depends on can_edit_record
+    (owner/superadmin edit directly; anyone else who can merely *see* the
+    record gets a pending proposal instead of a 403 - proposing needs no
+    special right beyond visibility, only *applying* one does)."""
     viewer = require_session()
     record = BiographyRecord.query.get_or_404(record_id)
     if not can_view_record(record, viewer):
         abort(404)  # invisible to this viewer at all - don't reveal it exists
-    if not can_edit_record(record, viewer):
-        abort(403)  # visible, but not theirs to edit
 
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "").strip() or None
     body = (data.get("body") or "").strip() or None
     encrypted_content = (data.get("encrypted_content") or "").strip() or None
     nonce = (data.get("nonce") or "").strip() or None
+    access_level = data.get("access_level")
 
     if record.zone == Zone.PERSONAL:
         if title or body:
@@ -258,6 +308,47 @@ def record_edit(record_id):
             return jsonify({"ok": False, "error": "encrypted_content_only_allowed_for_personal_zone"}), 400
         if not title and not body:
             return jsonify({"ok": False, "error": "title_or_body_required"}), 400
+
+    if not can_edit_record(record, viewer):
+        # Not the owner/superadmin - this becomes a proposal, the live
+        # record is untouched. access_level is never offered on this path
+        # at all - only owner/superadmin can move that dial (see the
+        # direct-apply branch below).
+        next_version = (record.versions[-1].version_number if record.versions else 0) + 1
+        db.session.add(
+            BiographyRecordVersion(
+                record_id=record.id,
+                version_number=next_version,
+                title=title,
+                body=body,
+                encrypted_content=encrypted_content,
+                nonce=nonce,
+                record_type=record.record_type,
+                author_username=viewer["username"],
+                status="pending",
+            )
+        )
+        db.session.commit()
+        return (
+            jsonify({"ok": True, "pending": True, "message": "Изменение отправлено на согласование владельцу."}),
+            202,
+        )
+
+    if access_level and record.zone != Zone.PERSONAL:
+        # Ceiling is always the CURRENT OWNER's rank, not the editor's -
+        # when the editor IS the owner these are the same value, but a
+        # superadmin editing someone else's record is still capped by
+        # that record's owner (see _validate_access_level_ceiling's
+        # docstring for the worked example this implements).
+        if viewer.get("username") == record.owner_username:
+            owner_access_class = viewer.get("access_class")
+        else:
+            owner_projection = dominex_client.fetch_user_projection(record.owner_username)
+            owner_access_class = owner_projection.get("access_class") if owner_projection else None
+        ceiling_error = _validate_access_level_ceiling(access_level, owner_access_class)
+        if ceiling_error:
+            return jsonify({"ok": False, "error": ceiling_error}), 400
+        record.access_level = access_level
 
     record.title = title
     record.body = body
@@ -276,6 +367,147 @@ def record_edit(record_id):
             author_username=viewer["username"],
         )
     )
+    db.session.commit()
+    return jsonify(_record_payload(record))
+
+
+@records_bp.get("/records/<int:record_id>/proposals")
+def record_proposals(record_id):
+    """The approval queue for this record - multiple pending proposals can
+    coexist (not "one active replaces the previous" - the user explicitly
+    asked for a queue), each reviewed/applied independently. Visible to
+    anyone who can view the record (so a proposer can see their own
+    proposal's status), but only can_edit_record() may act on one."""
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+
+    pending = [v for v in record.versions if v.status == "pending"]
+    return jsonify(
+        {
+            "results": [
+                {
+                    "version_number": v.version_number,
+                    "title": v.title,
+                    "body": v.body,
+                    "record_type": v.record_type,
+                    "author_username": v.author_username,
+                    "created_at": v.created_at.isoformat(),
+                }
+                for v in pending
+            ]
+        }
+    )
+
+
+@records_bp.post("/records/<int:record_id>/proposals/<int:version_number>/approve")
+def approve_proposal(record_id, version_number):
+    """Copies the proposed version's content onto the live record and
+    marks it applied. Other still-pending proposals for the same record
+    are left alone (queue semantics) - whichever gets approved next simply
+    overwrites on top, last-applied wins; no auto-merge or auto-rejection
+    of the rest."""
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if not can_edit_record(record, viewer):
+        abort(403)
+
+    version = BiographyRecordVersion.query.filter_by(
+        record_id=record.id, version_number=version_number, status="pending"
+    ).first_or_404()
+
+    record.title = version.title
+    record.body = version.body
+    record.encrypted_content = version.encrypted_content
+    record.nonce = version.nonce
+    version.status = "applied"
+    db.session.commit()
+    return jsonify(_record_payload(record))
+
+
+@records_bp.post("/records/<int:record_id>/proposals/<int:version_number>/reject")
+def reject_proposal(record_id, version_number):
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if not can_edit_record(record, viewer):
+        abort(403)
+
+    version = BiographyRecordVersion.query.filter_by(
+        record_id=record.id, version_number=version_number, status="pending"
+    ).first_or_404()
+    version.status = "rejected"
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@records_bp.post("/records/<int:record_id>/reassign-owner")
+def reassign_owner(record_id):
+    """Unconditional for whoever's allowed to do it at all (current owner,
+    voluntarily, or a superadmin) - not routed through the proposal queue,
+    reassignment isn't content. Logged separately in
+    BiographyRecordOwnershipChange (see that model's docstring for why)."""
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if not can_edit_record(record, viewer):
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get("username") or "").strip()
+    if not new_username:
+        return jsonify({"ok": False, "error": "username_required"}), 400
+
+    projection = dominex_client.fetch_user_projection(new_username)
+    if projection is None:
+        return jsonify({"ok": False, "error": "unknown_user"}), 404
+
+    db.session.add(
+        BiographyRecordOwnershipChange(
+            record_id=record.id,
+            from_username=record.owner_username,
+            to_username=new_username,
+            changed_by_username=viewer["username"],
+        )
+    )
+    record.owner_username = new_username
+    record.owner_display_name = projection.get("display_name")
+    db.session.commit()
+    return jsonify(_record_payload(record))
+
+
+@records_bp.post("/records/<int:record_id>/hide")
+def hide_record(record_id):
+    """Soft-delete for "I made a mistake testing this" or general
+    archival - not content, so no approval needed, same gate as direct
+    edits. Already-existing status="active" filters on every feed/list
+    query mean a hidden record just stops showing up there; still
+    fetchable by id for the owner/superadmin (see can_view_record)."""
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if not can_edit_record(record, viewer):
+        abort(403)
+    record.status = "hidden"
+    db.session.commit()
+    return jsonify(_record_payload(record))
+
+
+@records_bp.post("/records/<int:record_id>/unhide")
+def unhide_record(record_id):
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if not can_edit_record(record, viewer):
+        abort(403)
+    record.status = "active"
     db.session.commit()
     return jsonify(_record_payload(record))
 
@@ -363,6 +595,16 @@ def entities_lookup():
     q = (request.args.get("q") or "").strip()
     parents_only = (request.args.get("parents_only") or "").lower() in ("1", "true", "yes")
     return jsonify(dominex_client.search(q, parents_only=parents_only))
+
+
+@records_bp.get("/users/lookup")
+def users_lookup():
+    """Thin proxy to Dominex's own /api/v1/identity/users/search - the
+    "Владелец" picker (UserPicker.jsx) uses this, same "browser never
+    talks to Dominex directly" reasoning as entities_lookup above."""
+    require_session()
+    q = (request.args.get("q") or "").strip()
+    return jsonify(dominex_client.search_users(q))
 
 
 @records_bp.post("/records/<int:record_id>/attachments")

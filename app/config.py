@@ -25,6 +25,12 @@ class Config:
     SSO_TICKET_SECRET = os.getenv("SSO_TICKET_SECRET", "dev-sso-ticket-secret-change-me")
     SSOD_AUTH_PUBLIC_URL = os.getenv("SSOD_AUTH_PUBLIC_URL", "http://127.0.0.1:8010")
 
+    # Public marketing/wiki site for the whole ecosystem - "На сайт
+    # SSOD.pro" link, not used for any API call, just a plain external
+    # redirect. No meaningful local-dev equivalent, so this defaults to
+    # the real production domain even in dev.
+    SSOD_SITE_URL = os.getenv("SSOD_SITE_URL", "https://ssod.pro")
+
     # Personal-zone key registry (TZ section 4) - server-to-server calls to
     # ssod_auth, a new direction (Biographia -> ssod_auth, not the usual
     # other way). Internal URL uses the hyphenated alias

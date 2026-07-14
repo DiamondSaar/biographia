@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { usePersonalKey } from "../crypto/PersonalKeyContext.jsx";
 import { encryptText } from "../crypto/masterKey.ts";
+import { useViewer } from "../ViewerContext.jsx";
 import { ACCESS_CLASSES, RECORD_TYPE_LABELS, ZONE_LABELS } from "./RecordCard.jsx";
 
 function EntityPicker({ value, onChange }) {
@@ -102,17 +103,21 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
   const [accessLevel, setAccessLevel] = useState("G");
   const [entity, setEntity] = useState(fixedEntity);
   const [file, setFile] = useState(null);
-  const [caption, setCaption] = useState("");
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const { status: keyStatus, subkey } = usePersonalKey();
+  const viewer = useViewer();
 
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
     if (!title.trim() && !body.trim()) {
       setError("Нужен заголовок или текст.");
+      return;
+    }
+    if (zone === "org" && !viewer?.organization?.id) {
+      setError("У вас не указана организация — запись в зону «Юрлицо» создать нельзя.");
       return;
     }
 
@@ -139,24 +144,42 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
       );
       payload = { ...base, encrypted_content: ciphertext, nonce };
     } else {
-      payload = { ...base, title: title.trim() || null, body: body.trim() || null, access_level: accessLevel };
+      payload = {
+        ...base,
+        title: title.trim() || null,
+        body: body.trim() || null,
+        access_level: accessLevel,
+        // Which organization this record belongs to (compared against
+        // the viewer's own org for edit/visibility rights, see
+        // app/records/routes.py) - always the author's own organization,
+        // never the (separate, optional) attached entity above.
+        org_id: zone === "org" ? viewer.organization.id : null,
+      };
     }
 
     setSaving(true);
     try {
       const record = await api.createRecord(payload);
-      // Second call under the hood (backend has no combined create+upload
-      // endpoint), but one button/one submit from the user's side - the
-      // attach-a-file part of TZ 7.1's "текст + вложения" in one motion.
-      // Personal zone skipped here on purpose - file encryption (per-file
-      // DEK, TZ section 9) isn't built yet, same 501 the backend returns.
+      // The record now exists server-side - close the form from here on
+      // regardless of what happens to the (optional) attachment below.
+      // Previously this waited for the upload to also succeed before
+      // calling onCreated(), so a failed upload (e.g. a file too large
+      // for nginx's body-size limit) left the form open with "Сохранить"
+      // still clickable - re-clicking created a second, third, ... record
+      // for the same submission since createRecord() has no idempotency
+      // key. The record is real either way; only the attachment is best-effort.
+      onCreated();
       if (file && zone !== "personal") {
         const formData = new FormData();
         formData.append("file", file);
-        if (caption.trim()) formData.append("caption", caption.trim());
-        await api.uploadAttachment(record.id, formData);
+        try {
+          await api.uploadAttachment(record.id, formData);
+        } catch (err) {
+          window.alert(
+            "Запись сохранена, но файл не прикрепился: " + ((err.data && err.data.error) || err.message),
+          );
+        }
       }
-      onCreated();
     } catch (err) {
       setError((err.data && err.data.error) || err.message);
     } finally {
@@ -251,18 +274,9 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
                 />
               </label>
               {file && (
-                <>
-                  <input
-                    type="text"
-                    placeholder="Подпись (необязательно)"
-                    value={caption}
-                    onChange={(e) => setCaption(e.target.value)}
-                    style={{ maxWidth: 200 }}
-                  />
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
-                    Убрать
-                  </button>
-                </>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
+                  Убрать
+                </button>
               )}
             </div>
           </div>

@@ -12,7 +12,6 @@ function formatSize(bytes) {
 // a separate follow-up on top of this same upload UI, not built here.
 export default function AttachmentList({ record, canUpload, onAttached }) {
   const [attachments, setAttachments] = useState(record.attachments || []);
-  const [caption, setCaption] = useState("");
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
 
@@ -26,10 +25,8 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      if (caption.trim()) formData.append("caption", caption.trim());
       const attachment = await api.uploadAttachment(record.id, formData);
       setAttachments((prev) => [...prev, attachment]);
-      setCaption("");
       onAttached?.(attachment);
     } catch (err) {
       setError((err.data && err.data.error) || err.message);
@@ -47,10 +44,7 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
               <div className="file-icon">📎</div>
               <div className="file-meta">
                 <div className="file-name">{a.filename}</div>
-                <div className="file-size">
-                  {formatSize(a.size_bytes)}
-                  {a.caption ? ` · ${a.caption}` : ""}
-                </div>
+                <div className="file-size">{formatSize(a.size_bytes)}</div>
               </div>
             </a>
           ))}
@@ -59,13 +53,6 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
 
       {canUpload && record.zone !== "personal" && (
         <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            type="text"
-            placeholder="Подпись (необязательно)"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            style={{ maxWidth: 220 }}
-          />
           <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
             {uploading ? "Загрузка..." : "Прикрепить файл"}
             <input type="file" onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />

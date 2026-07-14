@@ -79,7 +79,20 @@ class BiographyRecord(db.Model):
     author_username = db.Column(db.String(150), nullable=False)
     author_display_name = db.Column(db.String(255), nullable=True)
 
+    # "Владелец/Ответственный" - who can edit directly and approve/reject
+    # proposed edits from others. Defaults to the author at creation, can
+    # be reassigned later (unconditionally, by the current owner or a
+    # superadmin - see app/records/routes.py::reassign_owner). A denormalized
+    # username/display_name pair, same shape as author_* above - the person
+    # is always a real Dominex User, this just isn't a foreign key since
+    # Biographia doesn't own Dominex's tables (see the class docstring).
+    owner_username = db.Column(db.String(150), nullable=False)
+    owner_display_name = db.Column(db.String(255), nullable=True)
+
     status = db.Column(db.String(20), nullable=False, default="active")
+    # "active" | "hidden" (soft-deleted/archived, e.g. cleaning up a
+    # mistaken test record - still fetchable by id for the owner/superadmin,
+    # excluded from all feed/list queries).
 
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
@@ -114,10 +127,38 @@ class BiographyRecordVersion(db.Model):
     author_username = db.Column(db.String(150), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 
+    # "applied" (already live on the record - the historical default for
+    # every version before this column existed, and still true for direct
+    # edits by the owner/superadmin) | "pending" (proposed by someone who
+    # isn't the current owner, awaiting the owner's decision - the live
+    # BiographyRecord row is untouched until approved) | "rejected" (owner
+    # declined it - kept for the record's history, never applied).
+    status = db.Column(db.String(20), nullable=False, default="applied")
+
     __table_args__ = (db.UniqueConstraint("record_id", "version_number", name="uq_record_version"),)
 
     def __repr__(self):
         return f"<BiographyRecordVersion record={self.record_id} v{self.version_number}>"
+
+
+class BiographyRecordOwnershipChange(db.Model):
+    """Lightweight audit trail for "Ответственный" reassignment - separate
+    from BiographyRecordVersion on purpose: a reassignment isn't content
+    and isn't subject to approval (always unconditional for whoever's
+    allowed to do it at all - see reassign_owner()), so mixing it into the
+    content-version log would conflate two different kinds of history."""
+
+    __tablename__ = "biography_record_ownership_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    record_id = db.Column(db.Integer, db.ForeignKey("biography_records.id"), nullable=False, index=True)
+    from_username = db.Column(db.String(150), nullable=True)
+    to_username = db.Column(db.String(150), nullable=False)
+    changed_by_username = db.Column(db.String(150), nullable=False)
+    changed_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<BiographyRecordOwnershipChange record={self.record_id} -> {self.to_username}>"
 
 
 class Attachment(db.Model):

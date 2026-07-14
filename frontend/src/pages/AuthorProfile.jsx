@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
+import AddRecordForm from "../components/AddRecordForm.jsx";
 import RecordCard from "../components/RecordCard.jsx";
 
 const ROLE_LABELS = { superadmin: "Суперадмин", admin: "Администратор", user: "Пользователь" };
@@ -22,13 +23,18 @@ export default function AuthorProfile() {
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(null);
   const [orgNames, setOrgNames] = useState({});
+  const [showForm, setShowForm] = useState(false);
 
-  useEffect(() => {
-    api.profile().then(setProfile).catch((err) => setError(err.message));
+  const loadRecords = () => {
     api
       .myRecords()
       .then((data) => setRecords(data.results || []))
       .catch((err) => setError(err.message));
+  };
+
+  useEffect(() => {
+    api.profile().then(setProfile).catch((err) => setError(err.message));
+    loadRecords();
   }, []);
 
   useEffect(() => {
@@ -68,10 +74,25 @@ export default function AuthorProfile() {
     <div>
       <div className="page-header">
         <h1>Личный кабинет</h1>
-        <Link to="/diary" className="btn btn-secondary">
-          Личный дневник
-        </Link>
+        <div className="two-col" style={{ gap: 10 }}>
+          <Link to="/diary" className="btn btn-secondary">
+            Личный дневник
+          </Link>
+          <button type="button" className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Закрыть форму" : "Добавить запись"}
+          </button>
+        </div>
       </div>
+
+      {showForm && (
+        <AddRecordForm
+          onCreated={() => {
+            setShowForm(false);
+            loadRecords();
+          }}
+          onCancel={() => setShowForm(false)}
+        />
+      )}
 
       {profile && (
         <div className="card">

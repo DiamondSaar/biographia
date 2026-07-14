@@ -92,3 +92,12 @@ def fetch_organization(organization_id):
 def search(q, parents_only=False, limit=20):
     result = _get("/api/v1/entities/search", params={"q": q, "parents_only": str(parents_only).lower(), "limit": limit})
     return result or {"results": []}
+
+
+def search_users(q, limit=20):
+    """"Владелец/Ответственный" picker (records/routes.py::reassign_owner,
+    the frontend's UserPicker) - only a real Dominex User (ecosystem
+    participant with a login) can be an owner, so this is a separate
+    search from search() above, which returns entities/organizations."""
+    result = _get("/api/v1/identity/users/search", params={"q": q, "limit": limit})
+    return result or {"results": []}

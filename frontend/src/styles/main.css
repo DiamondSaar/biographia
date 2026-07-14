@@ -100,12 +100,13 @@ a:hover { text-decoration: underline; }
 
 .sidebar-header {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   padding: 16px;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
+.sidebar-logo { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
 
 .sidebar-org {
   font-size: 15px;
@@ -255,6 +256,7 @@ a:hover { text-decoration: underline; }
   gap: 12px;
   margin-bottom: 28px;
 }
+.auth-logo { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
 .auth-org    { font-size: 20px; font-weight: 700; }
 .auth-subtitle { font-size: 13px; color: var(--text-muted); }
 

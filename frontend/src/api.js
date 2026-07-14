@@ -36,6 +36,16 @@ export const api = {
   editRecord: (id, payload) => request(`/records/${id}/edit`, { method: "POST", body: JSON.stringify(payload) }),
   uploadAttachment: (recordId, formData) =>
     request(`/records/${recordId}/attachments`, { method: "POST", body: formData }),
+  userLookup: (q) => request(`/users/lookup?q=${encodeURIComponent(q)}`),
+  recordProposals: (id) => request(`/records/${id}/proposals`),
+  approveProposal: (id, versionNumber) =>
+    request(`/records/${id}/proposals/${versionNumber}/approve`, { method: "POST" }),
+  rejectProposal: (id, versionNumber) =>
+    request(`/records/${id}/proposals/${versionNumber}/reject`, { method: "POST" }),
+  reassignOwner: (id, username) =>
+    request(`/records/${id}/reassign-owner`, { method: "POST", body: JSON.stringify({ username }) }),
+  hideRecord: (id) => request(`/records/${id}/hide`, { method: "POST" }),
+  unhideRecord: (id) => request(`/records/${id}/unhide`, { method: "POST" }),
   cryptoStatus: () => request("/crypto/status"),
   cryptoSetup: (material) => request("/crypto/setup", { method: "POST", body: JSON.stringify(material) }),
   cryptoMaterial: (provider = "password", credentialId = null) => {
@@ -54,3 +64,5 @@ export const api = {
 
 export const SSO_LOGIN_URL = "/auth/sso/redirect";
 export const LOGOUT_URL = "/logout";
+export const SSOD_SITE_URL = "/auth/ssod-site";
+export const SSOD_ACCOUNT_URL = "/auth/ssod-account";

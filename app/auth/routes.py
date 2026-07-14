@@ -36,6 +36,23 @@ def logout():
     return jsonify({"ok": True, "message": "Сессия завершена."})
 
 
+@auth_bp.get("/auth/ssod-site")
+def ssod_site_link():
+    """"На сайт SSOD.pro" on the logged-out screen - Biographia is one
+    module among several, this is how someone who ended up here without
+    wanting Biographia specifically finds their way back to the rest of
+    the ecosystem."""
+    return redirect(current_app.config["SSOD_SITE_URL"])
+
+
+@auth_bp.get("/auth/ssod-account")
+def ssod_account_link():
+    """"Личный кабинет ССОД" - same idea as ssod_site_link() above, but
+    to ssod_auth's own account/product-switcher page rather than the
+    public site."""
+    return redirect(f"{current_app.config['SSOD_AUTH_PUBLIC_URL'].rstrip('/')}/account/")
+
+
 @auth_bp.get("/auth/sso/callback")
 def sso_callback():
     """Accepts a short-lived SSO ticket issued by ssod_auth
