@@ -16,23 +16,29 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
   const [uploading, setUploading] = useState(false);
 
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!file) return;
+    if (files.length === 0) return;
 
     setError(null);
     setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const attachment = await api.uploadAttachment(record.id, formData);
-      setAttachments((prev) => [...prev, attachment]);
-      onAttached?.(attachment);
-    } catch (err) {
-      setError((err.data && err.data.error) || err.message);
-    } finally {
-      setUploading(false);
+    // Backend takes one file per request - upload sequentially so a
+    // failure part-way through leaves a clear "N of M attached" state
+    // instead of a pile of parallel requests racing each other.
+    const failed = [];
+    for (const file of files) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const attachment = await api.uploadAttachment(record.id, formData);
+        setAttachments((prev) => [...prev, attachment]);
+        onAttached?.(attachment);
+      } catch (err) {
+        failed.push(`${file.name}: ${(err.data && err.data.error) || err.message}`);
+      }
     }
+    if (failed.length > 0) setError(failed.join("; "));
+    setUploading(false);
   };
 
   return (
@@ -54,8 +60,8 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
       {canUpload && record.zone !== "personal" && (
         <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
-            {uploading ? "Загрузка..." : "Прикрепить файл"}
-            <input type="file" onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
+            {uploading ? "Загрузка..." : "Прикрепить файлы"}
+            <input type="file" multiple onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
           </label>
         </div>
       )}

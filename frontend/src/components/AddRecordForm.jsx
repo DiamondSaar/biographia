@@ -102,7 +102,7 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
   const [body, setBody] = useState("");
   const [accessLevel, setAccessLevel] = useState("G");
   const [entity, setEntity] = useState(fixedEntity);
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -169,16 +169,25 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
       // for the same submission since createRecord() has no idempotency
       // key. The record is real either way; only the attachment is best-effort.
       onCreated();
-      if (file && zone !== "personal") {
-        const formData = new FormData();
-        formData.append("file", file);
-        try {
-          await api.uploadAttachment(record.id, formData);
-        } catch (err) {
-          window.alert(
-            "Запись сохранена, но файл не прикрепился: " + ((err.data && err.data.error) || err.message),
-          );
+      if (files.length > 0 && zone !== "personal") {
+        const failed = [];
+        for (const f of files) {
+          const formData = new FormData();
+          formData.append("file", f);
+          try {
+            await api.uploadAttachment(record.id, formData);
+          } catch (err) {
+            failed.push(`${f.name}: ${(err.data && err.data.error) || err.message}`);
+          }
         }
+        if (failed.length > 0) {
+          window.alert("Запись сохранена, но часть файлов не прикрепилась:\n" + failed.join("\n"));
+        }
+        // onCreated() above already reloaded the list, but that happened
+        // before these uploads finished - the record showed up with zero
+        // attachments. Call it again now that the files have actually
+        // landed, so they appear without a manual page refresh.
+        onCreated();
       }
     } catch (err) {
       setError((err.data && err.data.error) || err.message);
@@ -263,22 +272,39 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
 
         {zone !== "personal" ? (
           <div className="field">
-            <label>Вложение (необязательно)</label>
+            <label>Вложения (необязательно)</label>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
-                {file ? file.name : "Выбрать файл"}
+                {files.length > 0 ? `Выбрано: ${files.length}` : "Выбрать файлы"}
                 <input
                   type="file"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  multiple
+                  onChange={(e) => setFiles(Array.from(e.target.files || []))}
                   style={{ display: "none" }}
                 />
               </label>
-              {file && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
-                  Убрать
+              {files.length > 0 && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFiles([])}>
+                  Убрать все
                 </button>
               )}
             </div>
+            {files.length > 0 && (
+              <ul style={{ marginTop: 6, fontSize: 13, color: "var(--text-muted)" }}>
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <span>{f.name}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted">Вложения для личной зоны пока не поддерживаются.</p>
