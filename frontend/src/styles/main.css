@@ -973,3 +973,69 @@ details.disclosure .disclosure-body { padding: 10px 0 4px 16px; }
 .jail-ip-list { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
 
 .mailbox-quota-none { color: var(--text-muted); font-size: 12px; }
+
+/* ─── Diary calendar (month grid with per-day record/attachment breakdown) ── */
+.diary-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.diary-cell {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: default;
+  font-family: inherit;
+}
+
+.diary-cell-active { cursor: pointer; }
+.diary-cell-active:hover { border-color: var(--accent); }
+.diary-cell-today { border-color: var(--accent); border-width: 2px; }
+.diary-cell-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+.diary-cell-date {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.diary-cell-stats {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+  min-height: 0;
+}
+
+.diary-stat-sq {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  min-width: 0;
+  min-height: 0;
+}
+
+.diary-stat-sq-empty { background: var(--bg); opacity: 0.35; }
+
+.stat-records { background: var(--success); }
+.stat-photo { background: var(--accent); }
+.stat-video { background: var(--danger); }
+.stat-other { background: #8b5cf6; }
+
+@media (max-width: 640px) {
+  .diary-cell-date { font-size: 9px; }
+  .diary-stat-sq { font-size: 8px; }
+}
