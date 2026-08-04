@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { usePersonalKey } from "../crypto/PersonalKeyContext.jsx";
 import { encryptText } from "../crypto/masterKey.ts";
+import { enqueue, isNetworkError } from "../offline/queue.js";
 import { useViewer } from "../ViewerContext.jsx";
 import { ACCESS_CLASSES, RECORD_TYPE_LABELS, ZONE_LABELS } from "./RecordCard.jsx";
 
@@ -159,7 +160,21 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
 
     setSaving(true);
     try {
-      const record = await api.createRecord(payload);
+      let record;
+      try {
+        record = await api.createRecord(payload);
+      } catch (err) {
+        if (!isNetworkError(err)) throw err;
+        // fetch() itself never reached the server (offline/DNS/refused,
+        // no err.status) - not a validation/permission error, so don't
+        // surface it as one. Queue the exact payload for a manual retry
+        // later (see offline/queue.js and OfflineBanner.jsx) instead of
+        // losing what the user just typed.
+        await enqueue(payload, zone !== "personal" ? files : []);
+        onCreated();
+        window.alert("Нет соединения — запись сохранена локально и отправится, когда вы нажмёте «Отправить» в баннере.");
+        return;
+      }
       // The record now exists server-side - close the form from here on
       // regardless of what happens to the (optional) attachment below.
       // Previously this waited for the upload to also succeed before
@@ -279,7 +294,23 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
                 <input
                   type="file"
                   multiple
-                  onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                  onChange={(e) => {
+                    setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                    e.target.value = "";
+                  }}
+                  style={{ display: "none" }}
+                />
+              </label>
+              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                Сделать фото
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                    e.target.value = "";
+                  }}
                   style={{ display: "none" }}
                 />
               </label>

@@ -223,6 +223,74 @@ a:hover { text-decoration: underline; }
   max-width: 1100px;
 }
 
+/* ─── Mobile shell: bottom tab bar + FAB ─────────────────────
+   Sidebar and tab bar both render unconditionally in Layout.jsx -
+   this breakpoint alone decides which is visible, so desktop layout
+   above it is untouched (zero markup/state difference to regress). */
+.bottom-tabbar { display: none; }
+.fab { display: none; }
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .content {
+    margin-left: 0;
+    padding: 16px;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom) + 16px);
+  }
+
+  .bottom-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    background: var(--bg-sidebar);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px 10px;
+    color: var(--text-sidebar);
+    font-size: 11px;
+    text-decoration: none;
+  }
+  .tab-item:hover { text-decoration: none; }
+  .tab-item.active { color: #93c5fd; }
+
+  .fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 16px;
+    bottom: calc(64px + env(safe-area-inset-bottom) + 16px);
+    z-index: 20;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0;
+    line-height: 1;
+    border: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    cursor: pointer;
+  }
+  /* Button text ("Добавить запись"/"Прикрепить запись") is hidden at
+     font-size:0 above - same button across 3 pages, one generic "+"
+     glyph reads fine everywhere rather than 3 different icons. */
+  .fab::before {
+    content: "+";
+    font-size: 28px;
+  }
+}
+
 .page-header {
   display: flex;
   align-items: center;

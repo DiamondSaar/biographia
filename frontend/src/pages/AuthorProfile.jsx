@@ -78,7 +78,11 @@ export default function AuthorProfile() {
           <Link to="/diary" className="btn btn-secondary">
             Личный дневник
           </Link>
-          <button type="button" className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
+          <button
+            type="button"
+            className={`btn btn-primary${showForm ? "" : " fab"}`}
+            onClick={() => setShowForm((v) => !v)}
+          >
             {showForm ? "Закрыть форму" : "Добавить запись"}
           </button>
         </div>

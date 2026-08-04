@@ -76,7 +76,11 @@ export default function EntityPage() {
 
       <div className="page-header">
         <h2 style={{ fontSize: 16 }}>Лента биографии</h2>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowForm((v) => !v)}>
+        <button
+          type="button"
+          className={`btn btn-primary btn-sm${showForm ? "" : " fab"}`}
+          onClick={() => setShowForm((v) => !v)}
+        >
           {showForm ? "Закрыть форму" : "Прикрепить запись"}
         </button>
       </div>

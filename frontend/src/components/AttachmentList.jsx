@@ -63,6 +63,17 @@ export default function AttachmentList({ record, canUpload, onAttached }) {
             {uploading ? "Загрузка..." : "Прикрепить файлы"}
             <input type="file" multiple onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
           </label>
+          <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+            Сделать фото
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleUpload}
+              disabled={uploading}
+              style={{ display: "none" }}
+            />
+          </label>
         </div>
       )}
       {canUpload && record.zone === "personal" && (

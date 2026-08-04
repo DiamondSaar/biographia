@@ -360,7 +360,11 @@ function PersonalFeed({ masterKey, onKeyRegistered }) {
         </div>
         <div className="two-col" style={{ gap: 10 }}>
           <AddWebAuthnKeyButton masterKey={masterKey} onRegistered={onKeyRegistered} />
-          <button type="button" className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
+          <button
+            type="button"
+            className={`btn btn-primary${showForm ? "" : " fab"}`}
+            onClick={() => setShowForm((v) => !v)}
+          >
             {showForm ? "Закрыть форму" : "Добавить запись"}
           </button>
         </div>

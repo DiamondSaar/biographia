@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { LOGOUT_URL } from "../api.js";
+import OfflineBanner from "./OfflineBanner.jsx";
 
 // Mirrors atb-portal's sidebar markup (.layout/.sidebar/.sidebar-nav/
 // .nav-item classes from styles/main.css) - same visual language across
@@ -15,6 +16,46 @@ export default function Layout({ viewer, children }) {
   };
 
   const navItemClass = (path) => `nav-item${location.pathname === path ? " active" : ""}`;
+  const tabItemClass = (path) => `tab-item${location.pathname === path ? " active" : ""}`;
+
+  // Same 3 destinations as .sidebar-nav below, just laid out for a phone -
+  // both render unconditionally, the max-width:768px breakpoint in
+  // main.css picks which one is actually visible (see that rule's
+  // comment for why this is simpler than a JS-driven toggle).
+  const tabs = [
+    {
+      path: "/",
+      label: "Вики",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+      ),
+    },
+    {
+      path: "/me",
+      label: "ЛК",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      ),
+    },
+    {
+      path: "/diary",
+      label: "Дневник",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      ),
+    },
+  ];
 
   return (
     <div className="layout">
@@ -63,7 +104,18 @@ export default function Layout({ viewer, children }) {
           </button>
         </div>
       </aside>
-      <main className="content">{children}</main>
+      <nav className="bottom-tabbar">
+        {tabs.map((tab) => (
+          <Link key={tab.path} to={tab.path} className={tabItemClass(tab.path)}>
+            {tab.icon}
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
+      <main className="content">
+        <OfflineBanner />
+        {children}
+      </main>
     </div>
   );
 }
