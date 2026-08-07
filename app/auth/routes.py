@@ -4,9 +4,11 @@ import jwt
 from flask import current_app, jsonify, redirect, request, session
 
 from app.auth import auth_bp
-from app.core.dominex_client import fetch_user_projection, has_biographia_access
+from app.core.dominex_client import fetch_user_projection, has_biographia_access, verify_credentials
 from app.extensions import db
 from app.models import SsoTicketUse
+from app.models.device_session import DeviceSession, generate_device_token, hash_token
+from app.models.integrations import utcnow
 
 
 def _sso_redirect_url(next_path=""):
@@ -34,6 +36,81 @@ def sso_redirect():
 def logout():
     session.clear()
     return jsonify({"ok": True, "message": "Сессия завершена."})
+
+
+@auth_bp.post("/auth/mobile/login")
+def mobile_login():
+    """Login endpoint for the native mobile app (biographia-mobile,
+    React Native/Expo) - it has no browser to run the SSO redirect
+    through (see sso_callback() below for that flow), so it authenticates
+    directly instead: username+password in, a long-lived device token
+    out. The password itself is never checked or stored here - Dominex
+    is asked (see dominex_client.verify_credentials, same call ssod_auth
+    already makes for its own login form). See
+    app/models/device_session.py's DeviceSession docstring for the full
+    reasoning and how this token is used afterwards
+    (Authorization: Bearer <token> on every later request, checked by
+    app/core/auth.py::require_session)."""
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"ok": False, "error": "username_and_password_required"}), 400
+
+    if not verify_credentials(username, password):
+        # Deliberately the same error for "no such user" and "wrong
+        # password" - same reasoning as any login form: don't tell an
+        # attacker which half was wrong.
+        return jsonify({"ok": False, "error": "invalid_credentials"}), 401
+
+    projection = fetch_user_projection(username)
+    if projection is None:
+        return jsonify({"ok": False, "error": f"dominex_unreachable_or_unknown_user: {username}"}), 502
+
+    if not has_biographia_access(projection):
+        return jsonify({"ok": False, "error": f"no_active_biographia_grant: {username}"}), 403
+
+    raw_token, token_hash = generate_device_token()
+    device_session = DeviceSession(
+        token_hash=token_hash,
+        username=projection["username"],
+        display_name=projection["display_name"],
+        access_class=projection["access_class"],
+        organization=projection.get("organization"),
+        role=projection.get("role"),
+    )
+    db.session.add(device_session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            # Shown to the client exactly once - it's responsible for
+            # storing this securely (expo-secure-store on the mobile
+            # side) and sending it back as Authorization: Bearer <token>.
+            # Biographia itself only ever stores its hash from here on.
+            "token": raw_token,
+            **device_session.to_viewer_dict(),
+        }
+    )
+
+
+@auth_bp.post("/auth/mobile/logout")
+def mobile_logout():
+    """Revokes the device token in the Authorization header, if any -
+    idempotent (missing/already-revoked token still returns ok, same
+    "clearing something that might already be gone" spirit as the
+    cookie-based /logout above)."""
+    header = request.headers.get("Authorization", "")
+    if header.startswith("Bearer "):
+        raw_token = header[len("Bearer ") :].strip()
+        device_session = DeviceSession.query.filter_by(token_hash=hash_token(raw_token)).first()
+        if device_session is not None:
+            device_session.revoked_at = utcnow()
+            db.session.commit()
+
+    return jsonify({"ok": True, "message": "Сессия устройства завершена."})
 
 
 @auth_bp.get("/auth/ssod-site")

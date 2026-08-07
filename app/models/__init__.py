@@ -6,6 +6,7 @@ from app.models.biography import (
     RecordType,
     Zone,
 )
+from app.models.device_session import DeviceSession
 from app.models.integrations import SsoTicketUse
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "BiographyRecord",
     "BiographyRecordOwnershipChange",
     "BiographyRecordVersion",
+    "DeviceSession",
     "RecordType",
     "SsoTicketUse",
     "Zone",

@@ -26,6 +26,37 @@ def fetch_user_projection(username):
     return response.json()
 
 
+def verify_credentials(username, password):
+    """Checks a username/password pair against Dominex - the sole store
+    of ecosystem login credentials (see Dominex's own
+    app/api/identity.py::verify_credentials docstring). Biographia never
+    stores or checks a password itself; this is the same
+    server-to-server call ssod_auth already makes for its own login form.
+    Used by POST /auth/mobile/login (app/auth/routes.py) - the mobile
+    app has no browser to run the SSO redirect through, so it needs a
+    direct way to prove identity instead.
+
+    Returns True/False, never raises - a Dominex outage should surface as
+    "login failed", not a 500."""
+    base_url = current_app.config["DOMINEX_API_BASE_URL"].rstrip("/")
+    api_key = current_app.config["DOMINEX_API_KEY"]
+
+    try:
+        response = requests.post(
+            f"{base_url}/api/v1/identity/credentials/verify",
+            json={"username": username, "password": password},
+            headers={"X-Dominex-Api-Key": api_key},
+            timeout=5,
+        )
+    except requests.RequestException:
+        return False
+
+    if response.status_code != 200:
+        return False
+
+    return bool(response.json().get("valid"))
+
+
 def has_biographia_access(projection):
     if projection is None:
         return False
