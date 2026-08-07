@@ -1,6 +1,7 @@
 import requests
-from flask import Blueprint, current_app, jsonify, session
+from flask import Blueprint, current_app, jsonify
 
+from app.core.auth import require_session
 from app.core.dominex_client import fetch_user_projection
 
 main_bp = Blueprint("main", __name__)
@@ -13,19 +14,22 @@ def index():
 
 @main_bp.get("/whoami")
 def whoami():
-    """Proves a session established by /auth/sso/callback actually
-    persists and carries real identity - placeholder landing page until
-    the real SPA (TZ section 7) exists."""
-    if "username" not in session:
-        return jsonify({"authenticated": False}), 401
+    """Proves a session actually persists and carries real identity -
+    works for both the web SPA (cookie, established by
+    /auth/sso/callback) and the mobile app (Bearer device token,
+    established by /auth/mobile/login) via require_session(), see
+    app/core/auth.py. Used by biographia-mobile on app start to restore
+    "who's logged in" from a token that survived a previous session
+    (see src/context/AuthContext.tsx there)."""
+    viewer = require_session()
     return jsonify(
         {
             "authenticated": True,
-            "username": session["username"],
-            "display_name": session["display_name"],
-            "access_class": session["access_class"],
-            "organization": session.get("organization"),
-            "role": session.get("role"),
+            "username": viewer["username"],
+            "display_name": viewer["display_name"],
+            "access_class": viewer["access_class"],
+            "organization": viewer.get("organization"),
+            "role": viewer.get("role"),
         }
     )
 
@@ -42,9 +46,8 @@ def profile():
     and org/access_class could have drifted since login. A round-trip
     per page load, not per request across the app - acceptable for a
     profile page that isn't hit on every navigation."""
-    if "username" not in session:
-        return jsonify({"authenticated": False}), 401
-    projection = fetch_user_projection(session["username"])
+    viewer = require_session()
+    projection = fetch_user_projection(viewer["username"])
     if projection is None:
         return jsonify({"ok": False, "error": "dominex_unreachable"}), 502
     return jsonify(projection)
