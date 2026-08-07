@@ -59,3 +59,23 @@ class Config:
     WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "localhost")
     WEBAUTHN_RP_NAME = os.getenv("WEBAUTHN_RP_NAME", "Biographia")
     WEBAUTHN_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:5173")
+
+    # CORS - the web SPA (frontend/) never needed this (always same-origin,
+    # via Vite's dev proxy or nginx in prod - see frontend/src/api.js's own
+    # comment on this). biographia-mobile's web preview target
+    # (`expo start --web`, a real browser tab on its own localhost port)
+    # is the first caller that's genuinely cross-origin, so this exists
+    # for that - real native iOS/Android builds aren't browsers and
+    # aren't subject to CORS at all, they don't need this either.
+    # Deliberately NOT combined with credentialed (cookie) CORS support -
+    # the mobile app authenticates via Authorization: Bearer (see
+    # app/core/auth.py), never cookies, so allowing these origins can't
+    # be used to ride a browser's existing SSO cookie session.
+    CORS_ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ALLOWED_ORIGINS",
+            "http://localhost:8081,http://localhost:8082,http://localhost:19006",
+        ).split(",")
+        if origin.strip()
+    ]
