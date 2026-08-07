@@ -63,12 +63,7 @@ services:
     environment:
       FLASK_APP: manage.py
     ports:
-      # 0.0.0.0, not 127.0.0.1: unlike the other local services here, this
-      # one also needs to be reachable from a phone on the same Wi-Fi
-      # during biographia-mobile development (same reasoning as
-      # biographia-mobile's Metro bundler already being LAN-exposed) -
-      # not needed once the mobile app talks to a real deployed backend.
-      - "0.0.0.0:5010:5000"
+      - "127.0.0.1:5010:5000"
     volumes:
       - .:/app
     networks:
