@@ -325,6 +325,7 @@ function AddWebAuthnKeyButton({ masterKey, onRegistered }) {
 }
 
 function PersonalFeed({ masterKey, onKeyRegistered }) {
+  const { lock } = usePersonalKey();
   const [records, setRecords] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState(null);
@@ -360,6 +361,15 @@ function PersonalFeed({ masterKey, onKeyRegistered }) {
         </div>
         <div className="two-col" style={{ gap: 10 }}>
           <AddWebAuthnKeyButton masterKey={masterKey} onRegistered={onKeyRegistered} />
+          {/* Мастер-ключ и так живёт только в памяти (см. PersonalKeyContext.jsx -
+              теряется сам при перезагрузке/выходе), но раньше не было способа
+              закрыть дневник сознательно, не выходя из всего аккаунта - lock()
+              уже существовал в контексте, просто не был подключён ни к одной
+              кнопке. После lock() DiaryPage сам покажет форму пароля снова
+              (status меняется на "locked" - см. переключение состояний ниже). */}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={lock} title="Заблокировать личный дневник">
+            🔒 Закрыть дневник
+          </button>
           <button
             type="button"
             className={`btn btn-primary${showForm ? "" : " fab"}`}

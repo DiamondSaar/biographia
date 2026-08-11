@@ -212,3 +212,57 @@ export function decryptText(subkey: Uint8Array, ciphertext: string, nonce: strin
   const decrypted = xchacha20poly1305(subkey, base64ToBytes(nonce)).decrypt(base64ToBytes(ciphertext));
   return new TextDecoder().decode(decrypted);
 }
+
+// Raw file bytes - same AEAD as encryptText above, but no base64 detour:
+// attachments can be megabytes, and bytesToBase64/base64ToBytes walk one
+// character at a time (fine for a short JSON record, not for a file).
+// Mirrors src/crypto/masterKey.ts on the mobile app (biographia-mobile) -
+// independent copy, same idea, same reasoning noted there.
+export function encryptBytes(subkey: Uint8Array, plaintext: Uint8Array): { ciphertext: Uint8Array; nonce: Uint8Array } {
+  const nonce = randomBytes(24);
+  const ciphertext = xchacha20poly1305(subkey, nonce).encrypt(plaintext);
+  return { ciphertext, nonce };
+}
+
+export function decryptBytes(subkey: Uint8Array, ciphertext: Uint8Array, nonce: Uint8Array): Uint8Array {
+  return xchacha20poly1305(subkey, nonce).decrypt(ciphertext);
+}
+
+// Filename/MIME type of a personal-zone attachment - hidden from the
+// server the same way title/body already are (encryptText above), same
+// JSON shape.
+export function encryptFileMeta(
+  subkey: Uint8Array,
+  filename: string,
+  contentType: string,
+): { ciphertext: string; nonce: string } {
+  return encryptText(subkey, JSON.stringify({ filename, content_type: contentType }));
+}
+
+export function decryptFileMeta(
+  subkey: Uint8Array,
+  ciphertext: string,
+  nonce: string,
+): { filename: string; content_type: string } {
+  return JSON.parse(decryptText(subkey, ciphertext, nonce));
+}
+
+// Attachments (unlike record text) are stored server-side and in-blob as
+// ONE opaque object - no separate nonce column/field anywhere - so the
+// nonce is simply glued to the front of the ciphertext (first 24 bytes).
+// Mirrors the mobile app's packEncryptedBlob/unpackEncryptedBlob exactly
+// (see biographia-mobile's src/crypto/masterKey.ts) - both clients must
+// agree on this framing since either one might decrypt what the other
+// encrypted.
+const XCHACHA20_NONCE_LENGTH = 24;
+
+export function packEncryptedBlob(ciphertext: Uint8Array, nonce: Uint8Array): Uint8Array {
+  const combined = new Uint8Array(nonce.length + ciphertext.length);
+  combined.set(nonce, 0);
+  combined.set(ciphertext, nonce.length);
+  return combined;
+}
+
+export function unpackEncryptedBlob(blob: Uint8Array): { ciphertext: Uint8Array; nonce: Uint8Array } {
+  return { nonce: blob.slice(0, XCHACHA20_NONCE_LENGTH), ciphertext: blob.slice(XCHACHA20_NONCE_LENGTH) };
+}

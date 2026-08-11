@@ -22,6 +22,21 @@ async function request(path, options = {}) {
   return data;
 }
 
+// Binary download (personal-zone attachment/thumbnail/preview) - plain
+// request() always tries response.json(), which would break on raw
+// bytes. Open/org attachments don't need this at all - a plain <a href>/
+// <img src> against the URL works fine since auth there is the cookie,
+// no JS fetch required (see AttachmentList.jsx).
+async function requestBytes(path) {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const error = new Error(`request_failed_${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export const api = {
   whoami: () => request("/whoami"),
   profile: () => request("/profile"),
@@ -34,8 +49,15 @@ export const api = {
   recordDetail: (id) => request(`/records/${id}`),
   createRecord: (payload) => request("/records", { method: "POST", body: JSON.stringify(payload) }),
   editRecord: (id, payload) => request(`/records/${id}/edit`, { method: "POST", body: JSON.stringify(payload) }),
+  // Same endpoint for both zones - open/org sends the real file, personal
+  // sends already-encrypted bytes + encrypted_meta/meta_nonce fields (see
+  // AttachmentList.jsx) - the backend branches on the record's own zone,
+  // the client just builds a different FormData.
   uploadAttachment: (recordId, formData) =>
     request(`/records/${recordId}/attachments`, { method: "POST", body: formData }),
+  attachmentFile: (id) => requestBytes(`/attachments/${id}`),
+  attachmentThumbnail: (id) => requestBytes(`/attachments/${id}/thumbnail`),
+  attachmentPreview: (id) => requestBytes(`/attachments/${id}/preview`),
   userLookup: (q) => request(`/users/lookup?q=${encodeURIComponent(q)}`),
   recordProposals: (id) => request(`/records/${id}/proposals`),
   approveProposal: (id, versionNumber) =>

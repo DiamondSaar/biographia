@@ -2,7 +2,7 @@ import io
 
 from flask import abort, jsonify, request, send_file
 
-from app.core import dominex_client, storage
+from app.core import dominex_client, office_convert, storage
 from app.core.access import access_rank, stricter_access_class
 from app.core.auth import require_session
 from app.extensions import db
@@ -97,12 +97,22 @@ def _record_payload(record):
 
 
 def _attachment_payload(attachment):
+    # Personal zone: filename/content_type are NULL in the DB (server never
+    # saw the real values) - encrypted_meta/meta_nonce carry the client-side
+    # encrypted equivalent instead, decrypted on-device only. has_thumbnail/
+    # has_preview are plain booleans, not the keys themselves - the actual
+    # bytes come from the separate /thumbnail and /preview routes below,
+    # gated the same way as the main file.
     return {
         "id": attachment.id,
         "filename": attachment.filename,
         "content_type": attachment.content_type,
         "size_bytes": attachment.size_bytes,
         "caption": attachment.caption,
+        "encrypted_meta": attachment.encrypted_meta,
+        "meta_nonce": attachment.meta_nonce,
+        "has_thumbnail": attachment.thumbnail_key is not None,
+        "has_preview": attachment.preview_key is not None,
         "uploaded_by": attachment.uploaded_by,
         "created_at": attachment.created_at.isoformat(),
     }
@@ -607,48 +617,127 @@ def users_lookup():
     return jsonify(dominex_client.search_users(q))
 
 
+def _read_upload_bytes(upload):
+    """Reads a werkzeug FileStorage fully into memory and enforces
+    MAX_ATTACHMENT_BYTES - shared by the main file and the (much smaller,
+    but same rule) thumbnail part."""
+    upload.stream.seek(0, 2)
+    size_bytes = upload.stream.tell()
+    upload.stream.seek(0)
+    if size_bytes == 0:
+        return None, "empty_file"
+    if size_bytes > MAX_ATTACHMENT_BYTES:
+        return None, "file_too_large"
+    return upload.stream.read(), None
+
+
 @records_bp.post("/records/<int:record_id>/attachments")
 def upload_attachment(record_id):
-    """Plaintext object-storage upload (TZ section 9) - open/org zone
-    only; personal-zone client-side encryption is Phase 1c, not this
-    endpoint. Gated by can_edit_record, same as text edits - adding a
-    file is a content mutation like any other."""
+    """Gated by can_edit_record, same as text edits - adding a file is a
+    content mutation like any other.
+
+    Two zone branches:
+    - open/org: plaintext upload, unchanged from before except two new
+      optional parts - `thumbnail` (a small client-generated preview
+      image) and, for Office documents, a best-effort server-side PDF
+      conversion (see app/core/office_convert.py) so a preview can be
+      shown without ever needing a native Word/Excel viewer.
+    - personal (Phase 1c, previously 501): the client has already
+      encrypted everything - `file` is opaque ciphertext (AEAD nonce
+      embedded as its first 24 bytes, same convention on both clients'
+      encryptBytes/decryptBytes - no separate nonce column needed),
+      `encrypted_meta`/`meta_nonce` carry the real filename/content_type
+      (also encrypted, same one-block idea as BiographyRecord's own
+      encrypted_content/nonce), and the optional `thumbnail` part (if
+      present) is ciphertext the same way as the main file. The server
+      never attempts to convert or inspect personal-zone content - it
+      can't."""
     viewer = require_session()
     record = BiographyRecord.query.get_or_404(record_id)
     if not can_view_record(record, viewer):
         abort(404)
     if not can_edit_record(record, viewer):
         abort(403)
-    if record.zone == Zone.PERSONAL:
-        return jsonify({"ok": False, "error": "personal_zone_attachments_not_implemented"}), 501
 
     upload = request.files.get("file")
-    if upload is None or not upload.filename:
+    if upload is None:
         return jsonify({"ok": False, "error": "file_required"}), 400
 
-    upload.stream.seek(0, 2)
-    size_bytes = upload.stream.tell()
-    upload.stream.seek(0)
-    if size_bytes == 0:
-        return jsonify({"ok": False, "error": "empty_file"}), 400
-    if size_bytes > MAX_ATTACHMENT_BYTES:
-        return jsonify({"ok": False, "error": "file_too_large"}), 413
+    file_bytes, file_error = _read_upload_bytes(upload)
+    if file_error:
+        return jsonify({"ok": False, "error": file_error}), 400 if file_error == "empty_file" else 413
 
-    storage_key = storage.put_object(upload.stream, upload.content_type)
+    thumbnail_upload = request.files.get("thumbnail")
+    thumbnail_bytes = None
+    if thumbnail_upload is not None:
+        thumbnail_bytes, thumbnail_error = _read_upload_bytes(thumbnail_upload)
+        if thumbnail_error:
+            # A bad thumbnail is never worth failing the whole upload over.
+            thumbnail_bytes = None
 
-    attachment = Attachment(
-        record_id=record.id,
-        storage_key=storage_key,
-        filename=upload.filename,
-        content_type=upload.content_type,
-        size_bytes=size_bytes,
-        caption=(request.form.get("caption") or "").strip() or None,
-        uploaded_by=viewer["username"],
-    )
+    if record.zone == Zone.PERSONAL:
+        encrypted_meta = (request.form.get("encrypted_meta") or "").strip()
+        meta_nonce = (request.form.get("meta_nonce") or "").strip()
+        if not encrypted_meta or not meta_nonce:
+            return jsonify({"ok": False, "error": "encrypted_meta_and_nonce_required"}), 400
+
+        storage_key = storage.put_object(io.BytesIO(file_bytes), None)
+        thumbnail_key = storage.put_object(io.BytesIO(thumbnail_bytes), None) if thumbnail_bytes else None
+
+        attachment = Attachment(
+            record_id=record.id,
+            storage_key=storage_key,
+            filename=None,
+            content_type=None,
+            size_bytes=len(file_bytes),
+            caption=None,
+            encrypted_meta=encrypted_meta,
+            meta_nonce=meta_nonce,
+            thumbnail_key=thumbnail_key,
+            uploaded_by=viewer["username"],
+        )
+    else:
+        if not upload.filename:
+            return jsonify({"ok": False, "error": "file_required"}), 400
+
+        storage_key = storage.put_object(io.BytesIO(file_bytes), upload.content_type)
+        thumbnail_key = storage.put_object(io.BytesIO(thumbnail_bytes), "image/jpeg") if thumbnail_bytes else None
+
+        preview_key = None
+        if office_convert.is_convertible(upload.content_type):
+            pdf_bytes = office_convert.convert_to_pdf(file_bytes, upload.filename)
+            if pdf_bytes:
+                preview_key = storage.put_object(io.BytesIO(pdf_bytes), "application/pdf")
+
+        attachment = Attachment(
+            record_id=record.id,
+            storage_key=storage_key,
+            filename=upload.filename,
+            content_type=upload.content_type,
+            size_bytes=len(file_bytes),
+            caption=(request.form.get("caption") or "").strip() or None,
+            thumbnail_key=thumbnail_key,
+            preview_key=preview_key,
+            uploaded_by=viewer["username"],
+        )
+
     db.session.add(attachment)
     db.session.commit()
 
     return jsonify(_attachment_payload(attachment)), 201
+
+
+def _stream_storage_object(storage_key, fallback_content_type, download_name):
+    result = storage.get_object_bytes(storage_key)
+    if result is None:
+        abort(404)
+    data, content_type = result
+    return send_file(
+        io.BytesIO(data),
+        mimetype=content_type or fallback_content_type or "application/octet-stream",
+        as_attachment=False,
+        download_name=download_name,
+    )
 
 
 @records_bp.get("/attachments/<int:attachment_id>")
@@ -656,19 +745,43 @@ def download_attachment(attachment_id):
     """Gated by the *parent record's* visibility, not a separate
     permission of its own - an attachment is exactly as visible as the
     record it's attached to (TZ section 9 doesn't call out attachments
-    as a distinct access-control surface)."""
+    as a distinct access-control surface). Zone-agnostic on purpose: for
+    personal-zone attachments this streams back opaque ciphertext exactly
+    as stored - decrypting it is the client's job, the server wouldn't be
+    able to even if it wanted to."""
     viewer = require_session()
     attachment = Attachment.query.get_or_404(attachment_id)
     if not can_view_record(attachment.record, viewer):
         abort(404)
+    return _stream_storage_object(attachment.storage_key, attachment.content_type, attachment.filename)
 
-    result = storage.get_object_bytes(attachment.storage_key)
-    if result is None:
+
+@records_bp.get("/attachments/<int:attachment_id>/thumbnail")
+def download_attachment_thumbnail(attachment_id):
+    """Same visibility gate as the main file. 404 when there simply isn't
+    one (older attachment, unsupported type, or a personal-zone upload
+    where the client chose not to send one) - callers should treat that
+    as "show a generic type icon", not as an error."""
+    viewer = require_session()
+    attachment = Attachment.query.get_or_404(attachment_id)
+    if not can_view_record(attachment.record, viewer):
         abort(404)
-    data, content_type = result
-    return send_file(
-        io.BytesIO(data),
-        mimetype=content_type or attachment.content_type or "application/octet-stream",
-        as_attachment=False,
-        download_name=attachment.filename,
-    )
+    if attachment.thumbnail_key is None:
+        abort(404)
+    return _stream_storage_object(attachment.thumbnail_key, "image/jpeg", None)
+
+
+@records_bp.get("/attachments/<int:attachment_id>/preview")
+def download_attachment_preview(attachment_id):
+    """Server-converted PDF preview of an Office document - open/org zone
+    only by construction (preview_key is never set for personal-zone
+    attachments, see office_convert.py). 404 when there isn't one (not an
+    Office file, or conversion failed/timed out) - callers should fall
+    back to "open externally" in that case."""
+    viewer = require_session()
+    attachment = Attachment.query.get_or_404(attachment_id)
+    if not can_view_record(attachment.record, viewer):
+        abort(404)
+    if attachment.preview_key is None:
+        abort(404)
+    return _stream_storage_object(attachment.preview_key, "application/pdf", None)

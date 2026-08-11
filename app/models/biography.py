@@ -162,11 +162,30 @@ class BiographyRecordOwnershipChange(db.Model):
 
 
 class Attachment(db.Model):
-    """Plaintext object-storage attachment (TZ section 9) - open/org zone
-    only for now. `storage_key` is a random UUID, never the original
-    filename (that's kept separately purely for display/download-as, not
-    used to address the object). Personal-zone attachments will need a
-    per-file DEK/ciphertext variant later (Phase 1c) - not this model."""
+    """Object-storage attachment (TZ section 9). `storage_key` is a random
+    UUID, never the original filename. Open/org zone: `storage_key` points
+    at plaintext bytes, `filename`/`content_type` are stored as-is. Personal
+    zone (Phase 1c): `storage_key` points at client-side ciphertext (server
+    never sees plaintext bytes or the real filename/type) - `filename`/
+    `content_type` stay NULL, the encrypted equivalent lives in
+    `encrypted_meta`/`meta_nonce` (same one-AEAD-block idea as
+    BiographyRecord.encrypted_content/.nonce).
+
+    `thumbnail_key` - a small preview generated CLIENT-SIDE (both zones -
+    the server can't generate one itself for personal-zone files, so the
+    same client-side step is reused for open/org too rather than having two
+    different code paths). For personal zone, the thumbnail bytes ARE
+    ciphertext, same as the main file - the AEAD nonce is embedded as the
+    first 24 bytes of the stored blob (see encryptBytes/decryptBytes in
+    src/crypto/masterKey.ts on both clients) rather than a separate column,
+    exactly like the main file's storage_key needs no separate nonce column
+    either.
+
+    `preview_key` - a server-generated PDF conversion of an Office document
+    (doc/docx/xls/xlsx/ppt/pptx), open/org zone only (impossible for
+    personal zone - the server never sees the plaintext to convert). NULL
+    whenever the source isn't an Office file or conversion failed/timed out;
+    a missing preview is never fatal to the upload itself."""
 
     __tablename__ = "attachments"
 
@@ -174,10 +193,15 @@ class Attachment(db.Model):
     record_id = db.Column(db.Integer, db.ForeignKey("biography_records.id"), nullable=False, index=True)
 
     storage_key = db.Column(db.String(64), nullable=False, unique=True)
-    filename = db.Column(db.String(255), nullable=False)
+    filename = db.Column(db.String(255), nullable=True)
     content_type = db.Column(db.String(100), nullable=True)
     size_bytes = db.Column(db.Integer, nullable=False)
     caption = db.Column(db.String(500), nullable=True)
+
+    encrypted_meta = db.Column(db.Text(), nullable=True)
+    meta_nonce = db.Column(db.String(64), nullable=True)
+    thumbnail_key = db.Column(db.String(64), nullable=True)
+    preview_key = db.Column(db.String(64), nullable=True)
 
     uploaded_by = db.Column(db.String(150), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)

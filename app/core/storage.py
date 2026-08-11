@@ -1,7 +1,8 @@
 """Object storage for attachments (TZ section 9) - MinIO locally, any
-S3-compatible endpoint in production. Open/org zone only for now
-(plaintext) - personal-zone client-side encryption is Phase 1c, not
-built here."""
+S3-compatible endpoint in production. Zone-agnostic: it stores whatever
+bytes it's given under a random key - for open/org that's plaintext, for
+personal zone (Phase 1c) that's client-side ciphertext. This module never
+needs to know which."""
 
 import uuid
 

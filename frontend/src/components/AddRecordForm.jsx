@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
+import { uploadRecordAttachment } from "../crypto/attachmentUpload.js";
 import { usePersonalKey } from "../crypto/PersonalKeyContext.jsx";
 import { encryptText } from "../crypto/masterKey.ts";
 import { enqueue, isNetworkError } from "../offline/queue.js";
@@ -184,13 +185,11 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
       // for the same submission since createRecord() has no idempotency
       // key. The record is real either way; only the attachment is best-effort.
       onCreated();
-      if (files.length > 0 && zone !== "personal") {
+      if (files.length > 0) {
         const failed = [];
         for (const f of files) {
-          const formData = new FormData();
-          formData.append("file", f);
           try {
-            await api.uploadAttachment(record.id, formData);
+            await uploadRecordAttachment(record.id, zone, f, subkey);
           } catch (err) {
             failed.push(`${f.name}: ${(err.data && err.data.error) || err.message}`);
           }
@@ -285,61 +284,57 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
           <textarea value={body} onChange={(e) => setBody(e.target.value)} />
         </div>
 
-        {zone !== "personal" ? (
-          <div className="field">
-            <label>Вложения (необязательно)</label>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
-                {files.length > 0 ? `Выбрано: ${files.length}` : "Выбрать файлы"}
-                <input
-                  type="file"
-                  multiple
-                  onChange={(e) => {
-                    setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
-                    e.target.value = "";
-                  }}
-                  style={{ display: "none" }}
-                />
-              </label>
-              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
-                Сделать фото
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
-                    e.target.value = "";
-                  }}
-                  style={{ display: "none" }}
-                />
-              </label>
-              {files.length > 0 && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFiles([])}>
-                  Убрать все
-                </button>
-              )}
-            </div>
+        <div className="field">
+          <label>Вложения (необязательно)</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+              {files.length > 0 ? `Выбрано: ${files.length}` : "Выбрать файлы"}
+              <input
+                type="file"
+                multiple
+                onChange={(e) => {
+                  setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                  e.target.value = "";
+                }}
+                style={{ display: "none" }}
+              />
+            </label>
+            <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+              Сделать фото
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                  e.target.value = "";
+                }}
+                style={{ display: "none" }}
+              />
+            </label>
             {files.length > 0 && (
-              <ul style={{ marginTop: 6, fontSize: 13, color: "var(--text-muted)" }}>
-                {files.map((f, i) => (
-                  <li key={`${f.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <span>{f.name}</span>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFiles([])}>
+                Убрать все
+              </button>
             )}
           </div>
-        ) : (
-          <p className="text-sm text-muted">Вложения для личной зоны пока не поддерживаются.</p>
-        )}
+          {files.length > 0 && (
+            <ul style={{ marginTop: 6, fontSize: 13, color: "var(--text-muted)" }}>
+              {files.map((f, i) => (
+                <li key={`${f.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>{f.name}</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onCancel}>
