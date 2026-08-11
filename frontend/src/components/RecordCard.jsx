@@ -15,6 +15,9 @@ export const RECORD_TYPE_LABELS = {
   relocation: "Перемещение",
   incident: "Инцидент",
   note: "Свободная заметка",
+  // Только для личной зоны - бэкенд отклоняет создание в любой другой
+  // (app/records/routes.py::create_record).
+  diary_entry: "Запись в дневник",
 };
 
 export const ZONE_LABELS = { open: "Открытая", org: "Юрлицо", personal: "Личная" };

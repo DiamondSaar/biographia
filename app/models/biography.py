@@ -18,6 +18,7 @@ class RecordType:
     RELOCATION = "relocation"
     INCIDENT = "incident"
     NOTE = "note"
+    DIARY_ENTRY = "diary_entry"  # personal zone only - see create_record()'s validation
 
     CHOICES = (
         INSTALLATION,
@@ -26,6 +27,7 @@ class RecordType:
         COMPONENT_REPLACEMENT,
         RELOCATION,
         INCIDENT,
+        DIARY_ENTRY,
         NOTE,
     )
 

@@ -168,6 +168,8 @@ def create_record():
     record_type = data.get("record_type")
     if record_type not in RecordType.CHOICES:
         return jsonify({"ok": False, "error": "invalid_record_type"}), 400
+    if record_type == RecordType.DIARY_ENTRY and zone != Zone.PERSONAL:
+        return jsonify({"ok": False, "error": "diary_entry_only_allowed_for_personal_zone"}), 400
 
     title = (data.get("title") or "").strip() or None
     body = (data.get("body") or "").strip() or None
