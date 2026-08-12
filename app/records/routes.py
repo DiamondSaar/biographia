@@ -50,6 +50,22 @@ def can_view_record(record, viewer):
     return False
 
 
+def _shows_in_wiki(record):
+    """Разделение рабочей и личной ленты (по запросу пользователя): вики -
+    это общие/юрлицо-записи плюс личные, у которых есть содержательная
+    привязка (категория вроде "Инцидент") - такая личная запись всё равно
+    реально документирует что-то, и её видит только сам автор
+    (can_view_record это уже гарантирует для personal). А вот "Свободная"
+    и "Запись в дневник" - чисто дневниковые категории без такой
+    привязки, им место только в Личном дневнике (PersonalFeed на
+    фронтенде фильтрует /records/mine по zone=personal без учёта
+    категории - специально, дневник остаётся полным журналом всего
+    личного)."""
+    if record.zone != Zone.PERSONAL:
+        return True
+    return record.record_type not in (RecordType.NOTE, RecordType.DIARY_ENTRY)
+
+
 def can_edit_record(record, viewer):
     """Whether this viewer can mutate the record DIRECTLY (apply an edit
     immediately, reassign the owner, change access_level, hide/unhide) -
@@ -576,7 +592,7 @@ def records_recent():
     candidates = (
         BiographyRecord.query.filter_by(status="active").order_by(BiographyRecord.updated_at.desc()).limit(200).all()
     )
-    visible = [r for r in candidates if can_view_record(r, viewer)]
+    visible = [r for r in candidates if can_view_record(r, viewer) and _shows_in_wiki(r)]
     return jsonify({"results": [_record_payload(r) for r in visible[:limit]]})
 
 

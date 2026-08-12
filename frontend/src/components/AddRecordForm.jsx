@@ -12,20 +12,35 @@ function EntityPicker({ value, onChange }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
   // TZ 7.1/8: "по умолчанию доступны только родительские сущности; тумблер
   // «показать составные элементы»" - unchecked = parents_only=true.
   const [showComposite, setShowComposite] = useState(false);
 
+  // Раньше ошибка поиска молча превращалась в пустой список - неотличимо
+  // от "ничего не найдено", человек просто не понимал, почему пикер
+  // "не даёт выбрать" (тот же класс бага, что уже правился в мобильном
+  // приложении - см. EntityPicker.tsx там).
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
+      setSearchError(null);
       return;
     }
+    setSearching(true);
     const handle = setTimeout(() => {
       api
         .entityLookup(query, !showComposite)
-        .then((data) => setResults(data.results || []))
-        .catch(() => setResults([]));
+        .then((data) => {
+          setResults(data.results || []);
+          setSearchError(null);
+        })
+        .catch((err) => {
+          setResults([]);
+          setSearchError(err.message || "Не удалось выполнить поиск.");
+        })
+        .finally(() => setSearching(false));
     }, 250);
     return () => clearTimeout(handle);
   }, [query, showComposite]);
@@ -66,25 +81,32 @@ function EntityPicker({ value, onChange }) {
         <input type="checkbox" checked={showComposite} onChange={(e) => setShowComposite(e.target.checked)} />
         Показать составные элементы
       </label>
-      {open && results.length > 0 && (
+      {open && query.trim() && (
         <div className="card" style={{ position: "absolute", zIndex: 5, width: "100%", marginTop: 4, padding: 8 }}>
-          {results.map((r) => (
-            <div
-              key={`${r.kind}-${r.id}`}
-              className="file-item"
-              style={{ cursor: "pointer" }}
-              onClick={() => {
-                onChange(r);
-                setQuery("");
-                setOpen(false);
-              }}
-            >
-              <div className="file-meta">
-                <div className="file-name">{r.display_name}</div>
-                <div className="file-size">{r.kind === "organization" ? "Юрлицо" : r.template_name}</div>
+          {searching && <div className="file-size">Ищем...</div>}
+          {!searching && searchError && <div className="alert alert-error" style={{ margin: 0 }}>{searchError}</div>}
+          {!searching && !searchError && results.length === 0 && (
+            <div className="file-size">Ничего не найдено в Доминекс.</div>
+          )}
+          {!searching &&
+            !searchError &&
+            results.map((r) => (
+              <div
+                key={`${r.kind}-${r.id}`}
+                className="file-item"
+                style={{ cursor: "pointer" }}
+                onClick={() => {
+                  onChange(r);
+                  setQuery("");
+                  setOpen(false);
+                }}
+              >
+                <div className="file-meta">
+                  <div className="file-name">{r.display_name}</div>
+                  <div className="file-size">{r.kind === "organization" ? "Юрлицо" : r.template_name}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       )}
     </div>

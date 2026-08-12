@@ -61,7 +61,14 @@ export default defineConfig({
         // in the service worker's own scope at runtime (ReferenceError
         // on the very first fetch). A RegExp's own .toString() is fully
         // self-contained, so it survives serialization correctly.
-        navigateFallbackDenylist: API_PATHS.map((p) => new RegExp(`^${p}`)),
+        // /builds - static apk-загрузки (nginx-раздел, см. корневой
+        // biographia_nginx.conf), не часть SPA и не в API_PATHS выше
+        // (не бэкенд-маршрут, в dev-режиме проксировать не нужно) - но
+        // без явного исключения service worker точно так же подменял бы
+        // и его на кэшированную оболочку приложения (обнаружено на живом
+        // тесте: /builds/ в адресной строке открывал пустую Вики вместо
+        // файла/каталога).
+        navigateFallbackDenylist: [...API_PATHS.map((p) => new RegExp(`^${p}`)), /^\/builds/],
         runtimeCaching: [
           {
             urlPattern: new RegExp(`^(${API_PATHS.join("|")})`),
