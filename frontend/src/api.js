@@ -44,6 +44,7 @@ export const api = {
   myRecords: () => request("/records/mine"),
   entityLookup: (q, parentsOnly = false) =>
     request(`/entities/lookup?q=${encodeURIComponent(q)}&parents_only=${parentsOnly}`),
+  organizationLookup: (q) => request(`/entities/lookup?q=${encodeURIComponent(q)}&kind=organization`),
   entityCard: (kind, id) => request(`/entities/${kind}/${id}`),
   entityFeed: (kind, id) => request(`/entities/${kind}/${id}/records`),
   recordDetail: (id) => request(`/records/${id}`),

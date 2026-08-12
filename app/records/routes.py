@@ -91,6 +91,7 @@ def _record_payload(record):
         "id": record.id,
         "entity_kind": record.entity_kind,
         "entity_id": record.entity_id,
+        "related_organization_id": record.related_organization_id,
         "zone": record.zone,
         "org_id": record.org_id,
         "access_level": record.access_level,
@@ -209,6 +210,7 @@ def create_record():
 
     entity_kind = data.get("entity_kind")
     entity_id = data.get("entity_id")
+    related_organization_id = data.get("related_organization_id")
     access_level = data.get("access_level")
     org_id = data.get("org_id")
 
@@ -235,6 +237,18 @@ def create_record():
         if zone != Zone.PERSONAL and entity_class:
             access_level = stricter_access_class(access_level, entity_class)
 
+    # Отдельное поле "Юрлицо" (по запросу пользователя) - независимо от
+    # entity_id/entity_kind выше, оба поля можно заполнить одновременно.
+    # Тот же floor rule применяется и к нему - запись не может быть более
+    # открытой, чем степень секретности юрлица, к которому она относится.
+    if related_organization_id is not None:
+        organization = dominex_client.fetch_organization(related_organization_id)
+        if organization is None:
+            return jsonify({"ok": False, "error": "dominex_unreachable_or_unknown_organization"}), 502
+        organization_class = organization.get("access_class")
+        if zone != Zone.PERSONAL and organization_class:
+            access_level = stricter_access_class(access_level, organization_class)
+
     if zone != Zone.PERSONAL:
         # Owner == author at creation (see below), so the ceiling is the
         # viewer's own rank - no Dominex round-trip needed here, unlike
@@ -246,6 +260,7 @@ def create_record():
     record = BiographyRecord(
         entity_kind=entity_kind,
         entity_id=entity_id,
+        related_organization_id=related_organization_id,
         zone=zone,
         org_id=org_id,
         access_level=access_level,
@@ -622,7 +637,14 @@ def entities_lookup():
     require_session()
     q = (request.args.get("q") or "").strip()
     parents_only = (request.args.get("parents_only") or "").lower() in ("1", "true", "yes")
-    return jsonify(dominex_client.search(q, parents_only=parents_only))
+    result = dominex_client.search(q, parents_only=parents_only)
+    # kind - опциональный фильтр для отдельного поля "Юрлицо" (та же
+    # ручка, тот же принцип поиска, что и "Привязать к сущности" - просто
+    # сузить результат до организаций, не трогая Dominex-эндпоинт).
+    kind = request.args.get("kind")
+    if kind in ("entity", "organization"):
+        result = {**result, "results": [r for r in result.get("results", []) if r.get("kind") == kind]}
+    return jsonify(result)
 
 
 @records_bp.get("/users/lookup")

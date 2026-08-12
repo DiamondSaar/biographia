@@ -8,7 +8,12 @@ import { enqueue, isNetworkError } from "../offline/queue.js";
 import { useViewer } from "../ViewerContext.jsx";
 import { ACCESS_CLASSES, RECORD_TYPE_LABELS, ZONE_LABELS } from "./RecordCard.jsx";
 
-function EntityPicker({ value, onChange }) {
+// Общий поиск-по-мере-набора против Dominex - используется и "Привязать к
+// сущности" (сущности+юрлица вперемешку), и отдельным полем "Юрлицо"
+// (только организации, по запросу пользователя - раньше юрлицо можно было
+// прикрепить только через общий пикер, что не позволяло одновременно
+// указать и сущность, и юрлицо на одной записи).
+function DominexLookupPicker({ value, onChange, label, attachedLabel, search, showCompositeToggle, describeResult }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -30,8 +35,7 @@ function EntityPicker({ value, onChange }) {
     }
     setSearching(true);
     const handle = setTimeout(() => {
-      api
-        .entityLookup(query, !showComposite)
+      search(query, showComposite)
         .then((data) => {
           setResults(data.results || []);
           setSearchError(null);
@@ -48,13 +52,11 @@ function EntityPicker({ value, onChange }) {
   if (value) {
     return (
       <div className="field">
-        <label>Привязано к</label>
+        <label>{attachedLabel}</label>
         <div className="vpn-card">
           <div className="vpn-info">
             <div className="vpn-name">{value.display_name}</div>
-            <div className="vpn-desc">
-              {value.kind === "organization" ? "Юрлицо" : value.template_name} · класс {value.access_class}
-            </div>
+            <div className="vpn-desc">{describeResult(value)}</div>
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(null)}>
             Убрать
@@ -66,7 +68,7 @@ function EntityPicker({ value, onChange }) {
 
   return (
     <div className="field" style={{ position: "relative" }}>
-      <label>Прикрепить к сущности (необязательно)</label>
+      <label>{label}</label>
       <input
         type="text"
         placeholder="Начните вводить название..."
@@ -77,10 +79,12 @@ function EntityPicker({ value, onChange }) {
         }}
         onFocus={() => setOpen(true)}
       />
-      <label className="check-field" style={{ marginTop: 6 }}>
-        <input type="checkbox" checked={showComposite} onChange={(e) => setShowComposite(e.target.checked)} />
-        Показать составные элементы
-      </label>
+      {showCompositeToggle && (
+        <label className="check-field" style={{ marginTop: 6 }}>
+          <input type="checkbox" checked={showComposite} onChange={(e) => setShowComposite(e.target.checked)} />
+          Показать составные элементы
+        </label>
+      )}
       {open && query.trim() && (
         <div className="card" style={{ position: "absolute", zIndex: 5, width: "100%", marginTop: 4, padding: 8 }}>
           {searching && <div className="file-size">Ищем...</div>}
@@ -103,13 +107,41 @@ function EntityPicker({ value, onChange }) {
               >
                 <div className="file-meta">
                   <div className="file-name">{r.display_name}</div>
-                  <div className="file-size">{r.kind === "organization" ? "Юрлицо" : r.template_name}</div>
+                  <div className="file-size">{describeResult(r)}</div>
                 </div>
               </div>
             ))}
         </div>
       )}
     </div>
+  );
+}
+
+function EntityPicker({ value, onChange }) {
+  return (
+    <DominexLookupPicker
+      value={value}
+      onChange={onChange}
+      label="Прикрепить к сущности (необязательно)"
+      attachedLabel="Привязано к"
+      search={(q, showComposite) => api.entityLookup(q, !showComposite)}
+      showCompositeToggle
+      describeResult={(r) => (r.kind === "organization" ? `Юрлицо · класс ${r.access_class}` : `${r.template_name} · класс ${r.access_class}`)}
+    />
+  );
+}
+
+function OrgPicker({ value, onChange }) {
+  return (
+    <DominexLookupPicker
+      value={value}
+      onChange={onChange}
+      label="Юрлицо (необязательно)"
+      attachedLabel="Юрлицо"
+      search={(q) => api.organizationLookup(q)}
+      showCompositeToggle={false}
+      describeResult={(r) => `Юрлицо${r.access_class ? ` · класс ${r.access_class}` : ""}`}
+    />
   );
 }
 
@@ -126,6 +158,7 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
   const [body, setBody] = useState("");
   const [accessLevel, setAccessLevel] = useState("G");
   const [entity, setEntity] = useState(fixedEntity);
+  const [relatedOrganization, setRelatedOrganization] = useState(null);
   const [files, setFiles] = useState([]);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -150,6 +183,7 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
       record_type: recordType,
       entity_kind: entity ? entity.kind : null,
       entity_id: entity ? entity.id : null,
+      related_organization_id: relatedOrganization ? relatedOrganization.id : null,
     };
 
     let payload;
@@ -298,6 +332,8 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
         ) : (
           <EntityPicker value={entity} onChange={setEntity} />
         )}
+
+        <OrgPicker value={relatedOrganization} onChange={setRelatedOrganization} />
 
         <div className="field">
           <label>Заголовок</label>

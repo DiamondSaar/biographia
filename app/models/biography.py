@@ -51,6 +51,14 @@ class BiographyRecord(db.Model):
     entity_kind = db.Column(db.String(20), nullable=True)
     entity_id = db.Column(db.Integer, nullable=True, index=True)
 
+    # Отдельное от entity_kind/entity_id поле "Юрлицо" - по запросу
+    # пользователя запись должна уметь одновременно указывать и на
+    # сущность (например, конкретный ноутбук), и на организацию (кому он
+    # принадлежит), а не только на что-то одно через общий пикер выше.
+    # Всегда организация (Dominex Organization), поэтому отдельного
+    # "kind"-столбца не нужно, в отличие от entity_kind.
+    related_organization_id = db.Column(db.Integer, nullable=True, index=True)
+
     zone = db.Column(db.String(20), nullable=False)
     org_id = db.Column(db.Integer, nullable=True, index=True)
     # Null only for zone=personal (TZ 6.2: "у personal отсутствует").

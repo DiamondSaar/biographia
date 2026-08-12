@@ -275,6 +275,14 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
           </Link>
         </p>
       )}
+      {showEntityLink && record.related_organization_id != null && (
+        <p className="text-sm text-muted">
+          Юрлицо:{" "}
+          <Link to={`/entity/organization/${record.related_organization_id}`}>
+            юрлицу #{record.related_organization_id}
+          </Link>
+        </p>
+      )}
       <div className="detail-list compact" style={{ marginTop: 12 }}>
         <dt>Автор</dt>
         <dd>{record.author_display_name || record.author_username}</dd>
