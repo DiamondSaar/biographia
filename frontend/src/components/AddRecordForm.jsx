@@ -31,6 +31,9 @@ function DominexLookupPicker({ value, onChange, label, attachedLabel, search, sh
     if (!query.trim()) {
       setResults([]);
       setSearchError(null);
+      // searching могло остаться true из предыдущего запуска - см. тот же
+      // фикс и комментарий в мобильном EntityPicker.tsx.
+      setSearching(false);
       return;
     }
     setSearching(true);
@@ -165,6 +168,14 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
 
   const { status: keyStatus, subkey } = usePersonalKey();
   const viewer = useViewer();
+
+  // Запись не может быть создана более открытой, чем собственный ранг
+  // автора (бэкенд и так это проверит - _validate_access_level_ceiling в
+  // app/records/routes.py - но не стоит предлагать заведомо отклоняемые
+  // варианты). Мобильное приложение уже делало этот же фильтр
+  // (AddRecordForm.tsx, maxAllowedRank) - здесь был пробел.
+  const maxAllowedRank = Math.max(0, ACCESS_CLASSES.indexOf(viewer?.access_class ?? "G"));
+  const availableAccessLevels = ACCESS_CLASSES.filter((c) => ACCESS_CLASSES.indexOf(c) <= maxAllowedRank);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -311,7 +322,7 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
           <div className="field">
             <label>Уровень доступа</label>
             <select value={accessLevel} onChange={(e) => setAccessLevel(e.target.value)}>
-              {ACCESS_CLASSES.map((c) => (
+              {availableAccessLevels.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
