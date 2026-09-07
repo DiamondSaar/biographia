@@ -3,12 +3,14 @@ import RecordCard from "./RecordCard.jsx";
 import { formatDayHeading, groupByDay, groupBySegment } from "../utils/dates.js";
 
 // TZ 7.4: "лента (по дням, по убыванию; группировка по дню, сегменты по
-// времени)".
-export default function DiaryFeed({ records }) {
+// времени)". Переиспользуется и Вики (WikiHome.jsx, режим "Календарь"/
+// "Лента") - emptyMessage переопределяет текст пустого состояния, у
+// личного дневника и общей вики он разный.
+export default function DiaryFeed({ records, emptyMessage = "Пока нет ни одной личной записи." }) {
   const days = groupByDay(records);
 
   if (days.length === 0) {
-    return <div className="empty-state">Пока нет ни одной личной записи.</div>;
+    return <div className="empty-state">{emptyMessage}</div>;
   }
 
   return (

@@ -40,11 +40,23 @@ async function requestBytes(path) {
 export const api = {
   whoami: () => request("/whoami"),
   profile: () => request("/profile"),
-  recentRecords: (limit = 10) => request(`/records/recent?limit=${limit}`),
+  // filters - {q, recordType, entityId, author}, все необязательны (см.
+  // WikiHome.jsx) - пробрасываются в /records/recent как есть, пустые
+  // (falsy) значения просто не попадают в query-строку.
+  recentRecords: (limit = 10, filters = {}) => {
+    const params = new URLSearchParams({ limit });
+    if (filters.q) params.set("q", filters.q);
+    if (filters.recordType) params.set("record_type", filters.recordType);
+    if (filters.entityId) params.set("entity_id", filters.entityId);
+    if (filters.author) params.set("author", filters.author);
+    return request(`/records/recent?${params.toString()}`);
+  },
   myRecords: () => request("/records/mine"),
   entityLookup: (q, parentsOnly = false) =>
     request(`/entities/lookup?q=${encodeURIComponent(q)}&parents_only=${parentsOnly}`),
   organizationLookup: (q) => request(`/entities/lookup?q=${encodeURIComponent(q)}&kind=organization`),
+  equipmentLookup: (q, parentsOnly = false) =>
+    request(`/entities/lookup?q=${encodeURIComponent(q)}&parents_only=${parentsOnly}&kind=entity`),
   entityCard: (kind, id) => request(`/entities/${kind}/${id}`),
   entityFeed: (kind, id) => request(`/entities/${kind}/${id}/records`),
   recordDetail: (id) => request(`/records/${id}`),
