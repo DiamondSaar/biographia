@@ -1,7 +1,7 @@
 import io
 from concurrent.futures import ThreadPoolExecutor
 
-from flask import abort, jsonify, request, send_file
+from flask import abort, current_app, jsonify, request, send_file
 from sqlalchemy import or_
 
 from app.core import dominex_client, office_convert, storage
@@ -110,9 +110,21 @@ def _resolve_display_names(records):
     if not keys:
         return {}
 
+    # _fetch_bound_entity -> dominex_client._get() reads current_app.config -
+    # тот current_app - контекстный прокси, привязанный к потоку запроса, и
+    # НЕ виден внутри воркеров ThreadPoolExecutor (RuntimeError: Working
+    # outside of application context - живой баг, найден пользователем на
+    # /entities/.../records сразу после деплоя). Явно проталкиваем тот же
+    # app-объект в контекст каждого воркера.
+    app = current_app._get_current_object()
+
+    def fetch(kind, obj_id):
+        with app.app_context():
+            return _fetch_bound_entity(kind, obj_id)
+
     names = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_fetch_bound_entity, kind, obj_id): (kind, obj_id) for kind, obj_id in keys}
+        futures = {pool.submit(fetch, kind, obj_id): (kind, obj_id) for kind, obj_id in keys}
         for future, key in futures.items():
             result = future.result()
             if result:
