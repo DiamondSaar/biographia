@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import abort, jsonify, request, send_file
 from sqlalchemy import or_
@@ -87,8 +88,48 @@ def can_edit_record(record, viewer):
     return record.owner_username == viewer.get("username")
 
 
-def _record_payload(record):
-    return {
+def _resolve_display_names(records):
+    """Пакетно резолвит entity_id/related_organization_id -> display_name
+    для списка записей (по запросу пользователя - "объекту #115"/"юрлицу
+    #3" неудобно, нужно настоящее название). Dominex не даёт resolve-by-
+    ids одним запросом - берём каждый УНИКАЛЬНЫЙ (kind, id) один раз (не
+    по разу на запись, если несколько записей ссылаются на одно и то же)
+    и тянем их параллельно, а не последовательно - иначе список из
+    десятка записей с привязкой ощутимо тормозил бы на каждой отдельной
+    Dominex round-trip. Возвращает {(kind, id): display_name|None} -
+    None либо когда Dominex недоступен, либо сущность с тех пор удалена -
+    в обоих случаях _record_payload просто не добавит поле с именем,
+    фронтенд откатится на "#id"."""
+    keys = set()
+    for record in records:
+        if record.entity_id is not None:
+            keys.add((record.entity_kind, record.entity_id))
+        if record.related_organization_id is not None:
+            keys.add(("organization", record.related_organization_id))
+
+    if not keys:
+        return {}
+
+    names = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_fetch_bound_entity, kind, obj_id): (kind, obj_id) for kind, obj_id in keys}
+        for future, key in futures.items():
+            result = future.result()
+            if result:
+                names[key] = result.get("display_name")
+    return names
+
+
+def _record_payload(record, names=None):
+    # names=None - однократный резолв для одной записи (детальный вид
+    # записи, где всё равно нужен только один-два запроса к Dominex).
+    # Список записей (см. records_recent/records_mine/entity_feed) сам
+    # резолвит имена батчем ЗАРАНЕЕ и передаёт готовый словарь - так все
+    # записи в списке делят один и тот же набор параллельных запросов
+    # вместо того, чтобы каждая тянула Dominex по новой.
+    if names is None:
+        names = _resolve_display_names([record])
+    payload = {
         "id": record.id,
         "entity_kind": record.entity_kind,
         "entity_id": record.entity_id,
@@ -112,6 +153,11 @@ def _record_payload(record):
         "pending_count": len([v for v in record.versions if v.status == "pending"]),
         "attachments": [_attachment_payload(a) for a in record.attachments],
     }
+    if record.entity_id is not None:
+        payload["entity_display_name"] = names.get((record.entity_kind, record.entity_id))
+    if record.related_organization_id is not None:
+        payload["related_organization_display_name"] = names.get(("organization", record.related_organization_id))
+    return payload
 
 
 def _attachment_payload(attachment):
@@ -591,7 +637,8 @@ def entity_feed(entity_kind, entity_id):
         _reconcile_floor(record)
 
     visible = [r for r in records if can_view_record(r, viewer)]
-    return jsonify({"results": [_record_payload(r) for r in visible]})
+    names = _resolve_display_names(visible)
+    return jsonify({"results": [_record_payload(r, names) for r in visible]})
 
 
 WIKI_SCAN_BATCH = 200
@@ -674,7 +721,8 @@ def records_recent():
     limit = min(int(request.args.get("limit") or 10), 50)
     query = _wiki_records_query(request.args)
     visible = _paginated_wiki_records(query, viewer, limit)
-    return jsonify({"results": [_record_payload(r) for r in visible]})
+    names = _resolve_display_names(visible)
+    return jsonify({"results": [_record_payload(r, names) for r in visible]})
 
 
 @records_bp.get("/records/mine")
@@ -692,7 +740,8 @@ def records_mine():
         .order_by(BiographyRecord.created_at.desc())
         .all()
     )
-    return jsonify({"results": [_record_payload(r) for r in records]})
+    names = _resolve_display_names(records)
+    return jsonify({"results": [_record_payload(r, names) for r in records]})
 
 
 @records_bp.get("/entities/lookup")

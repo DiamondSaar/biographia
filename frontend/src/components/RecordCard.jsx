@@ -271,7 +271,8 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
         <p className="text-sm text-muted">
           Привязано к:{" "}
           <Link to={`/entity/${record.entity_kind}/${record.entity_id}`}>
-            {record.entity_kind === "organization" ? "юрлицу" : "объекту"} #{record.entity_id}
+            {record.entity_display_name ||
+              `${record.entity_kind === "organization" ? "юрлицу" : "объекту"} #${record.entity_id}`}
           </Link>
         </p>
       )}
@@ -279,7 +280,7 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
         <p className="text-sm text-muted">
           Юрлицо:{" "}
           <Link to={`/entity/organization/${record.related_organization_id}`}>
-            юрлицу #{record.related_organization_id}
+            {record.related_organization_display_name || `юрлицу #${record.related_organization_id}`}
           </Link>
         </p>
       )}
