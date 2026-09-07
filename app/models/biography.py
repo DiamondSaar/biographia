@@ -64,7 +64,9 @@ class BiographyRecord(db.Model):
     # Null only for zone=personal (TZ 6.2: "у personal отсутствует").
     access_level = db.Column(db.String(1), nullable=True)
 
-    record_type = db.Column(db.String(30), nullable=False)
+    # index=True - фильтр по категории в поиске Вики (app/records/routes.py
+    # ::_wiki_records_query), запись по умолчанию не индексируется в Postgres.
+    record_type = db.Column(db.String(30), nullable=False, index=True)
     # Plaintext, used only for zone in (open, org). Zone=personal never
     # populates these - encrypted_content below instead (TZ section 4:
     # server only ever stores ciphertext for the personal zone). Kept as
@@ -86,7 +88,8 @@ class BiographyRecord(db.Model):
     encrypted_content = db.Column(db.Text, nullable=True)
     nonce = db.Column(db.String(64), nullable=True)
 
-    author_username = db.Column(db.String(150), nullable=False)
+    # index=True - фильтр по автору в поиске Вики (см. record_type выше).
+    author_username = db.Column(db.String(150), nullable=False, index=True)
     author_display_name = db.Column(db.String(255), nullable=True)
 
     # "Владелец/Ответственный" - who can edit directly and approve/reject
@@ -99,7 +102,7 @@ class BiographyRecord(db.Model):
     owner_username = db.Column(db.String(150), nullable=False)
     owner_display_name = db.Column(db.String(255), nullable=True)
 
-    status = db.Column(db.String(20), nullable=False, default="active")
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
     # "active" | "hidden" (soft-deleted/archived, e.g. cleaning up a
     # mistaken test record - still fetchable by id for the owner/superadmin,
     # excluded from all feed/list queries).

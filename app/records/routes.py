@@ -1,6 +1,7 @@
 import io
 
 from flask import abort, jsonify, request, send_file
+from sqlalchemy import or_
 
 from app.core import dominex_client, office_convert, storage
 from app.core.access import access_rank, stricter_access_class
@@ -593,6 +594,70 @@ def entity_feed(entity_kind, entity_id):
     return jsonify({"results": [_record_payload(r) for r in visible]})
 
 
+WIKI_SCAN_BATCH = 200
+WIKI_SCAN_MAX_ROWS = 2000  # генеральный потолок сканирования, чтобы сильно суженный фильтр не приводил к бесконечному циклу
+
+
+def _wiki_records_query(args):
+    """Строит SQL-запрос с фильтрами поиска/фильтра Вики (по запросу
+    пользователя - после подключения истории взаимодействий как источника
+    записей их станет много, простая лента перестаёт быть эффективной).
+    Всё, что можно, фильтруется на уровне SQL - в отличие от
+    access-контроля (can_view_record/_shows_in_wiki), который не выразить
+    одним предикатом (зависит от роли/организации вызывающего), поэтому
+    применяется по-прежнему построчно в Python уже ПОСЛЕ этих фильтров
+    (см. _paginated_wiki_records ниже)."""
+    query = BiographyRecord.query.filter_by(status="active")
+
+    q = (args.get("q") or "").strip()
+    if q:
+        like = f"%{q}%"
+        # Личная зона хранит только шифртекст (title/body всегда NULL) -
+        # полнотекстовый поиск по ней на сервере в принципе невозможен
+        # (TZ section 4) - осознанное ограничение, не баг.
+        query = query.filter(or_(BiographyRecord.title.ilike(like), BiographyRecord.body.ilike(like)))
+
+    record_type = (args.get("record_type") or "").strip()
+    if record_type:
+        query = query.filter(BiographyRecord.record_type == record_type)
+
+    entity_id = args.get("entity_id")
+    if entity_id:
+        # "Оборудование" - конкретная сущность Dominex (entity_kind=
+        # "entity"), не юрлицо - у них разное назначение, см.
+        # EntityPicker/OrgPicker на фронтенде.
+        query = query.filter(BiographyRecord.entity_kind == "entity", BiographyRecord.entity_id == int(entity_id))
+
+    author = (args.get("author") or "").strip()
+    if author:
+        query = query.filter(BiographyRecord.author_username == author)
+
+    return query.order_by(BiographyRecord.updated_at.desc())
+
+
+def _paginated_wiki_records(query, viewer, limit):
+    """Раньше /records/recent брал фиксированное окно из 200 последних
+    строк и уже там резал по правам/категории - с ростом объёма записей
+    старые видимые записи могли просто не попасть в окно и никогда бы не
+    находились через фильтр. Теперь сканируем постранично, пока не
+    наберём limit подходящих (или не упрёмся в WIKI_SCAN_MAX_ROWS) -
+    SQL-фильтры выше уже сильно сужают то, что вообще попадает в каждую
+    страницу, так что на практике редко требуется больше одной-двух."""
+    visible = []
+    offset = 0
+    while len(visible) < limit and offset < WIKI_SCAN_MAX_ROWS:
+        page = query.limit(WIKI_SCAN_BATCH).offset(offset).all()
+        if not page:
+            break
+        for record in page:
+            if can_view_record(record, viewer) and _shows_in_wiki(record):
+                visible.append(record)
+                if len(visible) >= limit:
+                    break
+        offset += WIKI_SCAN_BATCH
+    return visible
+
+
 @records_bp.get("/records/recent")
 def records_recent():
     """Global "лента последних правок" for the wiki home (TZ 7.1),
@@ -600,15 +665,16 @@ def records_recent():
     _reconcile_floor per record (could mean dozens of Dominex round-trips
     for one page load); visibility here uses each record's already-
     stored access_level. Still eventually consistent - reconciliation
-    still runs whenever a record's own detail/entity feed is opened."""
+    still runs whenever a record's own detail/entity feed is opened.
+
+    Опциональные query-параметры (все необязательны, комбинируются):
+    q (текст в заголовке/тексте), record_type (категория), entity_id
+    (оборудование - Dominex-сущность), author (username)."""
     viewer = require_session()
     limit = min(int(request.args.get("limit") or 10), 50)
-
-    candidates = (
-        BiographyRecord.query.filter_by(status="active").order_by(BiographyRecord.updated_at.desc()).limit(200).all()
-    )
-    visible = [r for r in candidates if can_view_record(r, viewer) and _shows_in_wiki(r)]
-    return jsonify({"results": [_record_payload(r) for r in visible[:limit]]})
+    query = _wiki_records_query(request.args)
+    visible = _paginated_wiki_records(query, viewer, limit)
+    return jsonify({"results": [_record_payload(r) for r in visible]})
 
 
 @records_bp.get("/records/mine")
