@@ -194,11 +194,11 @@ def _attachment_payload(attachment):
     }
 
 
-def _fetch_bound_entity(entity_kind, entity_id):
+def _fetch_bound_entity(entity_kind, entity_id, strict=False):
     if entity_kind == "entity":
-        return dominex_client.fetch_entity(entity_id)
+        return dominex_client.fetch_entity(entity_id, strict=strict)
     if entity_kind == "organization":
-        return dominex_client.fetch_organization(entity_id)
+        return dominex_client.fetch_organization(entity_id, strict=strict)
     return None
 
 
@@ -623,7 +623,10 @@ def entity_card(entity_kind, entity_id):
     require_session()
     if entity_kind not in ("entity", "organization"):
         abort(404)
-    entity = _fetch_bound_entity(entity_kind, entity_id)
+    try:
+        entity = _fetch_bound_entity(entity_kind, entity_id, strict=True)
+    except dominex_client.DominexUnavailable:
+        return jsonify({"ok": False, "error": "dominex_unreachable"}), 502
     if entity is None:
         abort(404)
     return jsonify(entity)

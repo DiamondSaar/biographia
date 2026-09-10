@@ -66,7 +66,15 @@ def has_biographia_access(projection):
     )
 
 
-def _get(path, params=None):
+class DominexUnavailable(Exception):
+    """Dominex didn't give a real answer - timeout, connection error, 5xx,
+    or a rejected API key. Raised only for strict=True callers, so one that
+    shows a page can say "Dominex недоступен" instead of "не найдено"
+    (2026-09-10: Dominex's workers were tied up by atb-portal's long polls,
+    and the entity page read every 5 s timeout as a vanished card)."""
+
+
+def _get(path, params=None, strict=False):
     base_url = current_app.config["DOMINEX_API_BASE_URL"].rstrip("/")
     api_key = current_app.config["DOMINEX_API_KEY"]
     try:
@@ -77,8 +85,12 @@ def _get(path, params=None):
             timeout=5,
         )
     except requests.RequestException:
+        if strict:
+            raise DominexUnavailable(path)
         return None
     if response.status_code != 200:
+        if strict and response.status_code != 404:
+            raise DominexUnavailable(f"{path}: HTTP {response.status_code}")
         return None
     return response.json()
 
@@ -112,12 +124,12 @@ def evaluate_oracle(username, intermediate, client_ip=None):
     return {"ok": False, "error": payload.get("error", "oracle_unavailable")}
 
 
-def fetch_entity(entity_id):
-    return _get(f"/api/v1/entities/{entity_id}")
+def fetch_entity(entity_id, strict=False):
+    return _get(f"/api/v1/entities/{entity_id}", strict=strict)
 
 
-def fetch_organization(organization_id):
-    return _get(f"/api/v1/organizations/{organization_id}")
+def fetch_organization(organization_id, strict=False):
+    return _get(f"/api/v1/organizations/{organization_id}", strict=strict)
 
 
 def search(q, parents_only=False, limit=20):
