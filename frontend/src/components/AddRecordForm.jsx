@@ -169,7 +169,7 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
             <label>Тип события</label>
             <select value={recordType} onChange={(e) => setRecordType(e.target.value)}>
               {Object.entries(RECORD_TYPE_LABELS)
-                .filter(([v]) => v !== "diary_entry" || zone === "personal")
+                .filter(([v]) => (v !== "diary_entry" || zone === "personal") && (v !== "planned_task" || zone !== "personal"))
                 .map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}

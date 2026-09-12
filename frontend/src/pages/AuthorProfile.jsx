@@ -21,6 +21,7 @@ function Section({ title, records, emptyText }) {
 export default function AuthorProfile() {
   const [profile, setProfile] = useState(null);
   const [records, setRecords] = useState(null);
+  const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [orgNames, setOrgNames] = useState({});
   const [showForm, setShowForm] = useState(false);
@@ -32,9 +33,21 @@ export default function AuthorProfile() {
       .catch((err) => setError(err.message));
   };
 
+  // "Предстоящие работы" по ВСЕЙ инфраструктуре (по запросу пользователя) -
+  // отдельный источник от myRecords выше: видны все задачи, которые
+  // пользователь вправе видеть по своему рангу/юрлицу, а не только те, что
+  // он сам создал (см. app/records/routes.py::records_tasks).
+  const loadTasks = () => {
+    api
+      .tasksFeed()
+      .then((data) => setTasks(data.results || []))
+      .catch((err) => setError(err.message));
+  };
+
   useEffect(() => {
     api.profile().then(setProfile).catch((err) => setError(err.message));
     loadRecords();
+    loadTasks();
   }, []);
 
   useEffect(() => {
@@ -93,6 +106,7 @@ export default function AuthorProfile() {
           onCreated={() => {
             setShowForm(false);
             loadRecords();
+            loadTasks();
           }}
           onCancel={() => setShowForm(false)}
         />
@@ -116,6 +130,15 @@ export default function AuthorProfile() {
             <dt>Класс доступа</dt>
             <dd>{profile.access_class}</dd>
           </div>
+        </div>
+      )}
+
+      {tasks && tasks.length > 0 && (
+        <div>
+          <h2 style={{ fontSize: 16, margin: "20px 0 12px" }}>Предстоящие работы (по всей инфраструктуре)</h2>
+          {tasks.map((t) => (
+            <RecordCard key={t.id} record={t} />
+          ))}
         </div>
       )}
 

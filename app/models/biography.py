@@ -19,6 +19,13 @@ class RecordType:
     INCIDENT = "incident"
     NOTE = "note"
     DIARY_ENTRY = "diary_entry"  # personal zone only - see create_record()'s validation
+    # "Предстоящие работы" (по запросу пользователя) - задача, которую сейчас
+    # сделать нельзя/не время, но важно не забыть. Никогда не показывается в
+    # общей ленте Вики (см. _shows_in_wiki) - только пришпилена сверху ленты
+    # своего объекта (entity_feed) и в сводном списке "по всему оборудованию"
+    # в личном кабинете (records_tasks). Недопустима в personal-зоне - как и
+    # DIARY_ENTRY выше, только наоборот (см. create_record()'s validation).
+    PLANNED_TASK = "planned_task"
 
     CHOICES = (
         INSTALLATION,
@@ -28,6 +35,7 @@ class RecordType:
         RELOCATION,
         INCIDENT,
         DIARY_ENTRY,
+        PLANNED_TASK,
         NOTE,
     )
 

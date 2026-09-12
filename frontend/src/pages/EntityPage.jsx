@@ -8,19 +8,24 @@ export default function EntityPage() {
   const { kind, id } = useParams();
   const [entity, setEntity] = useState(null);
   const [records, setRecords] = useState(null);
+  const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState(null);
 
   const loadFeed = () => {
     api
       .entityFeed(kind, id)
-      .then((data) => setRecords(data.results || []))
+      .then((data) => {
+        setRecords(data.results || []);
+        setTasks(data.tasks || []);
+      })
       .catch((err) => setError(err.message));
   };
 
   useEffect(() => {
     setEntity(null);
     setRecords(null);
+    setTasks([]);
     setError(null);
     api.entityCard(kind, id).then(setEntity).catch((err) => setError(err.message));
     loadFeed();
@@ -94,6 +99,15 @@ export default function EntityPage() {
           }}
           onCancel={() => setShowForm(false)}
         />
+      )}
+
+      {tasks.length > 0 && (
+        <div>
+          <h2 style={{ fontSize: 16, margin: "20px 0 12px" }}>Предстоящие работы</h2>
+          {tasks.map((t) => (
+            <RecordCard key={t.id} record={t} showEntityLink={false} />
+          ))}
+        </div>
       )}
 
       {records === null && <div className="empty-state">Загрузка...</div>}

@@ -18,6 +18,10 @@ export const RECORD_TYPE_LABELS = {
   // Только для личной зоны - бэкенд отклоняет создание в любой другой
   // (app/records/routes.py::create_record).
   diary_entry: "Запись в дневник",
+  // Наоборот: НЕ для личной зоны (см. create_record) - "Предстоящие
+  // работы", никогда не в общей ленте Вики (см. бэкендовский _shows_in_wiki),
+  // только на странице объекта и в сводном списке личного кабинета.
+  planned_task: "Предстоящая работа",
 };
 
 export const ZONE_LABELS = { open: "Открытая", org: "Юрлицо", personal: "Личная" };
@@ -220,6 +224,9 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
   const [showProposals, setShowProposals] = useState(false);
   const [showReassign, setShowReassign] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [showComplete, setShowComplete] = useState(false);
+  const [completeComment, setCompleteComment] = useState("");
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => setRecord(initialRecord), [initialRecord]);
 
@@ -228,6 +235,12 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
   // Matches app/records/routes.py::can_edit_record exactly - direct edit/
   // reassign/hide rights follow ownership, not authorship.
   const canEdit = viewer && (viewer.role === "superadmin" || viewer.username === record.owner_username);
+  // "Предстоящая работа" (по запросу пользователя) - закрывается не
+  // обычным "Скрыть" (без следа), а обязательным комментарием "что и как
+  // сделано" через отдельную ручку /complete (см. submitComplete ниже) -
+  // технически это то же самое скрытие, что и toggleHide, но фронтенд не
+  // даёт пропустить комментарий.
+  const isTask = record.record_type === "planned_task";
 
   const reassignTo = async (user) => {
     setActionError(null);
@@ -250,6 +263,25 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
     }
   };
 
+  const submitComplete = async () => {
+    if (!completeComment.trim()) {
+      setActionError("Опишите, что и как было сделано — без этого задачу закрыть нельзя.");
+      return;
+    }
+    setActionError(null);
+    setCompleting(true);
+    try {
+      const updated = await api.completeTask(record.id, completeComment.trim());
+      setRecord(updated);
+      setShowComplete(false);
+      setCompleteComment("");
+    } catch (err) {
+      setActionError((err.data && err.data.error) || err.message);
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   return (
     <div className={`card${record.access_level ? ` access-panel access-border-${record.access_level}` : ""}`}>
       {record.access_level && (
@@ -258,7 +290,7 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
       <div className="card-header">
         <h2>{locked ? "🔒 Личная запись" : title || "(без заголовка)"}</h2>
         <span className="dept-badge">{ZONE_LABELS[record.zone]}</span>
-        {record.status === "hidden" && <span className="count-badge">Скрыта</span>}
+        {record.status === "hidden" && <span className="count-badge">{isTask ? "Выполнено" : "Скрыта"}</span>}
       </div>
       {locked && (
         <p className="text-muted">
@@ -317,11 +349,40 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
               {showProposals ? "Скрыть предложения" : `Предложенные изменения${record.pending_count ? ` (${record.pending_count})` : ""}`}
             </button>
           )}
-          {canEdit && (
+          {canEdit && !isTask && (
             <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
               {record.status === "hidden" ? "Вернуть" : "Скрыть"}
             </button>
           )}
+          {canEdit && isTask && record.status === "active" && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete((v) => !v)}>
+              {showComplete ? "Отмена" : "Выполнено"}
+            </button>
+          )}
+          {canEdit && isTask && record.status === "hidden" && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
+              Вернуть в работу
+            </button>
+          )}
+        </div>
+      )}
+
+      {showComplete && (
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            placeholder="Что и как было сделано..."
+            value={completeComment}
+            onChange={(e) => setCompleteComment(e.target.value)}
+            rows={3}
+          />
+          <div className="modal-actions" style={{ marginTop: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete(false)}>
+              Отмена
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" disabled={completing} onClick={submitComplete}>
+              {completing ? "Сохраняем..." : "Отметить выполненным"}
+            </button>
+          </div>
         </div>
       )}
 

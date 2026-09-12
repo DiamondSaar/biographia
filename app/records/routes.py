@@ -16,6 +16,7 @@ from app.models import (
     RecordType,
     Zone,
 )
+from app.models.integrations import utcnow
 from app.records import records_bp
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB - plain sanity cap, not from TZ; revisit once real media sizes are known
@@ -63,6 +64,12 @@ def _shows_in_wiki(record):
     фронтенде фильтрует /records/mine по zone=personal без учёта
     категории - специально, дневник остаётся полным журналом всего
     личного)."""
+    if record.record_type == RecordType.PLANNED_TASK:
+        # "Предстоящие работы" (по запросу пользователя) - никогда в общей
+        # ленте Вики, ни при каком zone. Живёт только на странице своего
+        # объекта (entity_feed's "tasks") и в сводном списке личного
+        # кабинета (records_tasks) - см. их докстринги.
+        return False
     if record.zone != Zone.PERSONAL:
         return True
     return record.record_type not in (RecordType.NOTE, RecordType.DIARY_ENTRY)
@@ -246,6 +253,8 @@ def create_record():
         return jsonify({"ok": False, "error": "invalid_record_type"}), 400
     if record_type == RecordType.DIARY_ENTRY and zone != Zone.PERSONAL:
         return jsonify({"ok": False, "error": "diary_entry_only_allowed_for_personal_zone"}), 400
+    if record_type == RecordType.PLANNED_TASK and zone == Zone.PERSONAL:
+        return jsonify({"ok": False, "error": "planned_task_not_allowed_for_personal_zone"}), 400
 
     title = (data.get("title") or "").strip() or None
     body = (data.get("body") or "").strip() or None
@@ -614,6 +623,51 @@ def unhide_record(record_id):
     return jsonify(_record_payload(record))
 
 
+@records_bp.post("/records/<int:record_id>/complete")
+def complete_task(record_id):
+    """Закрыть "Предстоящую работу" (по запросу пользователя) - только для
+    record_type=planned_task, и только с обязательным комментарием "что и
+    как сделано": нельзя закрыть задачу без следа исполнения. Комментарий -
+    не отдельное поле, а дописывается в body новой версией, той же append-
+    only историей, что и обычная правка (record_edit) - в версиях записи
+    видно, когда и что именно было сделано. Закрытие технически ==
+    hide_record (status="hidden") - тот же механизм, что уже скрывает
+    записи из всех лент/списков (entity_feed, records_tasks), просто с
+    другой подписью кнопки на фронтенде в контексте задачи."""
+    viewer = require_session()
+    record = BiographyRecord.query.get_or_404(record_id)
+    if not can_view_record(record, viewer):
+        abort(404)
+    if record.record_type != RecordType.PLANNED_TASK:
+        return jsonify({"ok": False, "error": "not_a_task"}), 400
+    if not can_edit_record(record, viewer):
+        abort(403)
+    if record.status == "hidden":
+        return jsonify({"ok": False, "error": "already_completed"}), 400
+
+    data = request.get_json(silent=True) or {}
+    comment = (data.get("comment") or "").strip()
+    if not comment:
+        return jsonify({"ok": False, "error": "comment_required"}), 400
+
+    note = f"✅ Выполнено {utcnow():%Y-%m-%d %H:%M}, {viewer['username']}:\n{comment}"
+    record.body = f"{record.body}\n\n{note}" if record.body else note
+    next_version = (record.versions[-1].version_number if record.versions else 0) + 1
+    db.session.add(
+        BiographyRecordVersion(
+            record_id=record.id,
+            version_number=next_version,
+            title=record.title,
+            body=record.body,
+            record_type=record.record_type,
+            author_username=viewer["username"],
+        )
+    )
+    record.status = "hidden"
+    db.session.commit()
+    return jsonify(_record_payload(record))
+
+
 @records_bp.get("/entities/<entity_kind>/<int:entity_id>")
 def entity_card(entity_kind, entity_id):
     """Thin proxy to Dominex's own entity/organization detail (TZ 7.2's
@@ -638,7 +692,14 @@ def entity_feed(entity_kind, entity_id):
     viewer can't see just don't appear (TZ 3: "для него не отображаются
     вовсе"), no partial-access hint here since this is a content feed,
     not the "недостаточно прав" case from TZ 10.2 (that's for Dominex's
-    own entity-card endpoints, not Biographia's record feed)."""
+    own entity-card endpoints, not Biographia's record feed).
+
+    Отдельный ключ "tasks" (по запросу пользователя) - активные
+    "Предстоящие работы" этого объекта, пришпилены сверху ленты на
+    фронтенде отдельным блоком; "results" их больше не содержит (были бы
+    видны дважды). Выполненная задача (status=hidden, см. complete_task)
+    просто перестаёт попадать в оба списка - тем же фильтром status=
+    "active", что и всегда."""
     viewer = require_session()
     if entity_kind not in ("entity", "organization"):
         abort(404)
@@ -652,8 +713,15 @@ def entity_feed(entity_kind, entity_id):
         _reconcile_floor(record)
 
     visible = [r for r in records if can_view_record(r, viewer)]
+    tasks = [r for r in visible if r.record_type == RecordType.PLANNED_TASK]
+    results = [r for r in visible if r.record_type != RecordType.PLANNED_TASK]
     names = _resolve_display_names(visible)
-    return jsonify({"results": [_record_payload(r, names) for r in visible]})
+    return jsonify(
+        {
+            "results": [_record_payload(r, names) for r in results],
+            "tasks": [_record_payload(r, names) for r in tasks],
+        }
+    )
 
 
 WIKI_SCAN_BATCH = 200
@@ -757,6 +825,27 @@ def records_mine():
     )
     names = _resolve_display_names(records)
     return jsonify({"results": [_record_payload(r, names) for r in records]})
+
+
+@records_bp.get("/records/tasks")
+def records_tasks():
+    """Сводный список "Предстоящих работ" по ВСЕМУ оборудованию (по запросу
+    пользователя - "чтобы было видно, где и что у нас висит по плану для
+    последовательного исполнения"), для блока в личном кабинете перед
+    лентой. В отличие от records_mine, не привязан к авторству/владению -
+    видимость та же, что у Вики (can_view_record: по рангу/юрлицу
+    участника), просто без _shows_in_wiki (тот, наоборот, эти записи из
+    Вики исключает - см. его докстринг). Сортировка по created_at.asc() -
+    старые задачи наверху, как очередь на исполнение, не лента новостей."""
+    viewer = require_session()
+    records = (
+        BiographyRecord.query.filter_by(record_type=RecordType.PLANNED_TASK, status="active")
+        .order_by(BiographyRecord.created_at.asc())
+        .all()
+    )
+    visible = [r for r in records if can_view_record(r, viewer)]
+    names = _resolve_display_names(visible)
+    return jsonify({"results": [_record_payload(r, names) for r in visible]})
 
 
 @records_bp.get("/entities/lookup")

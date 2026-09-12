@@ -52,6 +52,12 @@ export const api = {
     return request(`/records/recent?${params.toString()}`);
   },
   myRecords: () => request("/records/mine"),
+  // "Предстоящие работы" по всему оборудованию (для личного кабинета) -
+  // видимость та же, что у Вики (по рангу/юрлицу), но не привязана к
+  // авторству/владению - см. app/records/routes.py::records_tasks.
+  tasksFeed: () => request("/records/tasks"),
+  completeTask: (id, comment) =>
+    request(`/records/${id}/complete`, { method: "POST", body: JSON.stringify({ comment }) }),
   entityLookup: (q, parentsOnly = false) =>
     request(`/entities/lookup?q=${encodeURIComponent(q)}&parents_only=${parentsOnly}`),
   organizationLookup: (q) => request(`/entities/lookup?q=${encodeURIComponent(q)}&kind=organization`),
