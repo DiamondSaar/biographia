@@ -227,6 +227,13 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
   const [showComplete, setShowComplete] = useState(false);
   const [completeComment, setCompleteComment] = useState("");
   const [completing, setCompleting] = useState(false);
+  // По запросу пользователя - плитка в списке сжата до двух строк (название +
+  // "кем создан / юрлицо / когда"), всё остальное (текст, зона/категория,
+  // привязка к объекту, действия, версии) видно только по клику/раскрытию -
+  // в отличие от мобильного, на вебе нет отдельного экрана записи, поэтому
+  // раскрытие - это локальное состояние прямо в карточке.
+  const [expanded, setExpanded] = useState(false);
+  const toggleExpanded = () => setExpanded((v) => !v);
 
   useEffect(() => setRecord(initialRecord), [initialRecord]);
 
@@ -287,120 +294,133 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
       {record.access_level && (
         <span className={`access-badge access-${record.access_level} field-corner-badge`}>{record.access_level}</span>
       )}
-      <div className="card-header">
+      <div className="card-header" onClick={toggleExpanded} style={{ cursor: "pointer" }}>
         <h2>{locked ? "🔒 Личная запись" : title || "(без заголовка)"}</h2>
-        <span className="dept-badge">{ZONE_LABELS[record.zone]}</span>
-        {record.status === "hidden" && <span className="count-badge">{isTask ? "Выполнено" : "Скрыта"}</span>}
       </div>
-      {locked && (
-        <p className="text-muted">
-          Разблокируйте <Link to="/diary">личный дневник</Link>, чтобы увидеть содержимое.
-        </p>
-      )}
-      {!locked && failed && <div className="alert alert-error">Не удалось расшифровать запись.</div>}
-      {!locked && !failed && !showEdit && body && <p>{body}</p>}
-      {showEntityLink && record.entity_id != null && (
-        <p className="text-sm text-muted">
-          Привязано к:{" "}
-          <Link to={`/entity/${record.entity_kind}/${record.entity_id}`}>
-            {record.entity_display_name ||
-              `${record.entity_kind === "organization" ? "юрлицу" : "объекту"} #${record.entity_id}`}
-          </Link>
-        </p>
-      )}
-      {showEntityLink && record.related_organization_id != null && (
-        <p className="text-sm text-muted">
-          Юрлицо:{" "}
-          <Link to={`/entity/organization/${record.related_organization_id}`}>
-            {record.related_organization_display_name || `юрлицу #${record.related_organization_id}`}
-          </Link>
-        </p>
-      )}
-      <div className="detail-list compact" style={{ marginTop: 12 }}>
-        <dt>Автор</dt>
-        <dd>{record.author_display_name || record.author_username}</dd>
-        <dt>Ответственный</dt>
-        <dd>
-          {record.owner_display_name || record.owner_username}
-          {canEdit && (
-            <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setShowReassign((v) => !v)}>
-              Переназначить
-            </button>
-          )}
-        </dd>
-        <dt>Тип</dt>
-        <dd>{RECORD_TYPE_LABELS[record.record_type] || record.record_type}</dd>
-        <dt>Создано</dt>
-        <dd>{new Date(record.created_at).toLocaleString("ru-RU")}</dd>
-      </div>
-      {actionError && <div className="alert alert-error">{actionError}</div>}
-      {showReassign && <UserPicker onPick={reassignTo} onCancel={() => setShowReassign(false)} />}
+      <p className="text-sm text-muted" onClick={toggleExpanded} style={{ cursor: "pointer", margin: "2px 0 0" }}>
+        {record.author_display_name || record.author_username}
+        {showEntityLink && record.related_organization_display_name ? ` · ${record.related_organization_display_name}` : ""}
+        {" · "}
+        {new Date(record.created_at).toLocaleString("ru-RU")}
+      </p>
 
-      {!locked && !showEdit && (
-        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEdit(true)}>
-            Редактировать
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowVersions((v) => !v)}>
-            {showVersions ? "Скрыть версии" : "Предыдущие версии"}
-          </button>
-          {canEdit && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowProposals((v) => !v)}>
-              {showProposals ? "Скрыть предложения" : `Предложенные изменения${record.pending_count ? ` (${record.pending_count})` : ""}`}
-            </button>
-          )}
-          {canEdit && !isTask && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
-              {record.status === "hidden" ? "Вернуть" : "Скрыть"}
-            </button>
-          )}
-          {canEdit && isTask && record.status === "active" && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete((v) => !v)}>
-              {showComplete ? "Отмена" : "Выполнено"}
-            </button>
-          )}
-          {canEdit && isTask && record.status === "hidden" && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
-              Вернуть в работу
-            </button>
-          )}
-        </div>
-      )}
-
-      {showComplete && (
-        <div style={{ marginTop: 10 }}>
-          <textarea
-            placeholder="Что и как было сделано..."
-            value={completeComment}
-            onChange={(e) => setCompleteComment(e.target.value)}
-            rows={3}
-          />
-          <div className="modal-actions" style={{ marginTop: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete(false)}>
-              Отмена
-            </button>
-            <button type="button" className="btn btn-primary btn-sm" disabled={completing} onClick={submitComplete}>
-              {completing ? "Сохраняем..." : "Отметить выполненным"}
-            </button>
+      {expanded && (
+        <>
+          <div className="card-header" style={{ marginTop: 8 }}>
+            <span className="dept-badge">{ZONE_LABELS[record.zone]}</span>
+            {record.status === "hidden" && <span className="count-badge">{isTask ? "Выполнено" : "Скрыта"}</span>}
           </div>
-        </div>
-      )}
+          {locked && (
+            <p className="text-muted">
+              Разблокируйте <Link to="/diary">личный дневник</Link>, чтобы увидеть содержимое.
+            </p>
+          )}
+          {!locked && failed && <div className="alert alert-error">Не удалось расшифровать запись.</div>}
+          {!locked && !failed && !showEdit && body && <p>{body}</p>}
+          {showEntityLink && record.entity_id != null && (
+            <p className="text-sm text-muted">
+              Привязано к:{" "}
+              <Link to={`/entity/${record.entity_kind}/${record.entity_id}`}>
+                {record.entity_display_name ||
+                  `${record.entity_kind === "organization" ? "юрлицу" : "объекту"} #${record.entity_id}`}
+              </Link>
+            </p>
+          )}
+          {showEntityLink && record.related_organization_id != null && (
+            <p className="text-sm text-muted">
+              Юрлицо:{" "}
+              <Link to={`/entity/organization/${record.related_organization_id}`}>
+                {record.related_organization_display_name || `юрлицу #${record.related_organization_id}`}
+              </Link>
+            </p>
+          )}
+          <div className="detail-list compact" style={{ marginTop: 12 }}>
+            <dt>Автор</dt>
+            <dd>{record.author_display_name || record.author_username}</dd>
+            <dt>Ответственный</dt>
+            <dd>
+              {record.owner_display_name || record.owner_username}
+              {canEdit && (
+                <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setShowReassign((v) => !v)}>
+                  Переназначить
+                </button>
+              )}
+            </dd>
+            <dt>Тип</dt>
+            <dd>{RECORD_TYPE_LABELS[record.record_type] || record.record_type}</dd>
+            <dt>Создано</dt>
+            <dd>{new Date(record.created_at).toLocaleString("ru-RU")}</dd>
+          </div>
+          {actionError && <div className="alert alert-error">{actionError}</div>}
+          {showReassign && <UserPicker onPick={reassignTo} onCancel={() => setShowReassign(false)} />}
 
-      {showEdit && (
-        <EditRecordForm
-          record={record}
-          canEdit={canEdit}
-          onCancel={() => setShowEdit(false)}
-          onDone={(result, pending) => {
-            setShowEdit(false);
-            if (!pending) setRecord(result);
-          }}
-        />
-      )}
-      {showVersions && <VersionHistory recordId={record.id} />}
-      {showProposals && canEdit && <ProposalQueue recordId={record.id} onResolved={setRecord} />}
+          {!locked && !showEdit && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEdit(true)}>
+                Редактировать
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowVersions((v) => !v)}>
+                {showVersions ? "Скрыть версии" : "Предыдущие версии"}
+              </button>
+              {canEdit && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowProposals((v) => !v)}>
+                  {showProposals ? "Скрыть предложения" : `Предложенные изменения${record.pending_count ? ` (${record.pending_count})` : ""}`}
+                </button>
+              )}
+              {canEdit && !isTask && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
+                  {record.status === "hidden" ? "Вернуть" : "Скрыть"}
+                </button>
+              )}
+              {canEdit && isTask && record.status === "active" && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete((v) => !v)}>
+                  {showComplete ? "Отмена" : "Выполнено"}
+                </button>
+              )}
+              {canEdit && isTask && record.status === "hidden" && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={toggleHide}>
+                  Вернуть в работу
+                </button>
+              )}
+            </div>
+          )}
 
-      {!locked && <AttachmentList record={record} canUpload={canEdit} />}
+          {showComplete && (
+            <div style={{ marginTop: 10 }}>
+              <textarea
+                placeholder="Что и как было сделано..."
+                value={completeComment}
+                onChange={(e) => setCompleteComment(e.target.value)}
+                rows={3}
+              />
+              <div className="modal-actions" style={{ marginTop: 6 }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowComplete(false)}>
+                  Отмена
+                </button>
+                <button type="button" className="btn btn-primary btn-sm" disabled={completing} onClick={submitComplete}>
+                  {completing ? "Сохраняем..." : "Отметить выполненным"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showEdit && (
+            <EditRecordForm
+              record={record}
+              canEdit={canEdit}
+              onCancel={() => setShowEdit(false)}
+              onDone={(result, pending) => {
+                setShowEdit(false);
+                if (!pending) setRecord(result);
+              }}
+            />
+          )}
+          {showVersions && <VersionHistory recordId={record.id} />}
+          {showProposals && canEdit && <ProposalQueue recordId={record.id} onResolved={setRecord} />}
+
+          {!locked && <AttachmentList record={record} canUpload={canEdit} />}
+        </>
+      )}
     </div>
   );
 }
