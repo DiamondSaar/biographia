@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import RecordCard from "./RecordCard.jsx";
 import { dayKey, formatDayHeading, monthGrid, monthLabel, WEEKDAY_LABELS } from "../utils/dates.js";
 
@@ -25,12 +25,24 @@ const STAT_DEFS = [
 // down what's in it (записи/фото/видео/прочее) instead of just an
 // intensity tint, while staying compact enough for a full month to fit
 // without scrolling.
-export default function DiaryCalendar({ records }) {
+// onMonthChange(year, month) - необязательный: вызывается при монтировании
+// и при каждом переключении месяца. Личный дневник его не передаёт (там
+// /records/mine и так отдаёт всю историю автора целиком, резать по месяцу
+// незачем) - но Вики (по запросу пользователя) ограничен top-N последних
+// записей, и без этого календарь показывал пусто для любого месяца, кроме
+// самого последнего (старые записи просто не попадали в top-N). Передавая
+// текущий месяц наверх, WikiHome.jsx догружает именно его целиком.
+export default function DiaryCalendar({ records, onMonthChange }) {
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(null);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
+
+  useEffect(() => {
+    onMonthChange?.(year, month);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month]);
 
   const statsByDay = useMemo(() => {
     const stats = new Map();

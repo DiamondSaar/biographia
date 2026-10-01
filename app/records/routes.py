@@ -762,6 +762,18 @@ def _wiki_records_query(args):
     if author:
         query = query.filter(BiographyRecord.author_username == author)
 
+    # Вид "Календарь" (по запросу пользователя) группирует записи по дню
+    # created_at - фильтр здесь должен бить по той же колонке, не по
+    # updated_at, которой отсортирован сам запрос ниже. date_from
+    # включительно, date_to - ИСКЛЮЧАЯ (вызывающий передаёт начало
+    # следующего дня/месяца), как в _all_matching_wiki_records ниже.
+    date_from = (args.get("date_from") or "").strip()
+    if date_from:
+        query = query.filter(BiographyRecord.created_at >= date_from)
+    date_to = (args.get("date_to") or "").strip()
+    if date_to:
+        query = query.filter(BiographyRecord.created_at < date_to)
+
     return query.order_by(BiographyRecord.updated_at.desc())
 
 
@@ -788,6 +800,29 @@ def _paginated_wiki_records(query, viewer, limit):
     return visible
 
 
+def _all_matching_wiki_records(query, viewer):
+    """Вариант _paginated_wiki_records для вида "Календарь" (по запросу
+    пользователя) - там нужна ПОЛНОТА за выбранный месяц, а не top-N
+    последних записей. С "top-N последних" календарь был пуст для всех
+    месяцев, кроме самого последнего: после подключения истории
+    взаимодействий как источника записей 50 последних правок целиком
+    укладываются в несколько последних дней, а старые дни молча выпадают
+    из окна, хотя в базе они есть. Сканирует ВЕСЬ диапазон (он уже сужен
+    date_from/date_to в _wiki_records_query) до WIKI_SCAN_MAX_ROWS - тот же
+    предохранитель от сканирования без дна, что и у top-N варианта."""
+    visible = []
+    offset = 0
+    while offset < WIKI_SCAN_MAX_ROWS:
+        page = query.limit(WIKI_SCAN_BATCH).offset(offset).all()
+        if not page:
+            break
+        for record in page:
+            if can_view_record(record, viewer) and _shows_in_wiki(record):
+                visible.append(record)
+        offset += WIKI_SCAN_BATCH
+    return visible
+
+
 @records_bp.get("/records/recent")
 def records_recent():
     """Global "лента последних правок" for the wiki home (TZ 7.1),
@@ -799,11 +834,21 @@ def records_recent():
 
     Опциональные query-параметры (все необязательны, комбинируются):
     q (текст в заголовке/тексте), record_type (категория), entity_id
-    (оборудование - Dominex-сущность), author (username)."""
+    (оборудование - Dominex-сущность), author (username).
+
+    date_from/date_to (ISO-дата, YYYY-MM-DD, date_to исключая) - вид
+    "Календарь": вместо top-N последних отдаёт ВСЕ подходящие записи за
+    диапазон (обычно месяц), который фронтенд сам подставляет при
+    переключении месяца (см. _all_matching_wiki_records). limit в этом
+    режиме игнорируется - "последние N" не имеет смысла для полноты
+    месяца."""
     viewer = require_session()
-    limit = min(int(request.args.get("limit") or 10), 50)
     query = _wiki_records_query(request.args)
-    visible = _paginated_wiki_records(query, viewer, limit)
+    if request.args.get("date_from") or request.args.get("date_to"):
+        visible = _all_matching_wiki_records(query, viewer)
+    else:
+        limit = min(int(request.args.get("limit") or 10), 50)
+        visible = _paginated_wiki_records(query, viewer, limit)
     names = _resolve_display_names(visible)
     return jsonify({"results": [_record_payload(r, names) for r in visible]})
 

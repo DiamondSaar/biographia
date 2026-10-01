@@ -4,6 +4,7 @@ import AddRecordForm from "../components/AddRecordForm.jsx";
 import { AuthorPicker, EquipmentPicker } from "../components/DominexPickers.jsx";
 import DiaryCalendar from "../components/DiaryCalendar.jsx";
 import RecordCard, { RECORD_TYPE_LABELS } from "../components/RecordCard.jsx";
+import { dayKey } from "../utils/dates.js";
 
 const WIKI_LIMIT = 50;
 
@@ -24,17 +25,37 @@ export default function WikiHome() {
   const [recordType, setRecordType] = useState("");
   const [equipmentFilter, setEquipmentFilter] = useState(null);
   const [authorFilter, setAuthorFilter] = useState(null);
+  // Месяц, который сейчас открыт в DiaryCalendar - только для вида
+  // "Календарь" (см. её onMonthChange). По умолчанию текущий месяц, чтобы
+  // первая отрисовка до первого колбэка от календаря не показывала пусто.
+  const [calendarCursor, setCalendarCursor] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
 
   const hasActiveFilters = Boolean(q || recordType || equipmentFilter || authorFilter);
 
+  // По запросу пользователя - в режиме "Календарь" top-N последних записей
+  // (WIKI_LIMIT) не годится: после подключения истории взаимодействий как
+  // источника записей последние 50 правок укладываются в несколько
+  // последних дней, и календарь показывал пусто для всех более ранних
+  // месяцев, хотя записи там были. Вместо этого запрашиваем ВСЕ записи
+  // именно открытого в календаре месяца (бэкенд в этом режиме сам
+  // игнорирует limit - см. app/records/routes.py::records_recent).
   const load = () => {
+    const filters = {
+      q,
+      recordType,
+      entityId: equipmentFilter?.id,
+      author: authorFilter?.username,
+    };
+    if (mode === "calendar") {
+      const { year, month } = calendarCursor;
+      filters.dateFrom = dayKey(new Date(year, month, 1));
+      filters.dateTo = dayKey(new Date(year, month + 1, 1));
+    }
     api
-      .recentRecords(WIKI_LIMIT, {
-        q,
-        recordType,
-        entityId: equipmentFilter?.id,
-        author: authorFilter?.username,
-      })
+      .recentRecords(WIKI_LIMIT, filters)
       .then((data) => setRecords(data.results || []))
       .catch((err) => setError(err.message));
   };
@@ -43,11 +64,13 @@ export default function WikiHome() {
   // выбирается одним кликом (задержка в 300 мс незаметна), а текстовый
   // поиск как раз и рассчитан на дебаунс по мере набора - один и тот же
   // эффект решает обе задачи, не нужно два отдельных пути перезагрузки.
+  // mode/calendarCursor в зависимостях - переключение на "Календарь" или
+  // смена открытого месяца должны перезагружать данные под новый диапазон.
   useEffect(() => {
     const handle = setTimeout(load, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, recordType, equipmentFilter, authorFilter]);
+  }, [q, recordType, equipmentFilter, authorFilter, mode, calendarCursor]);
 
   const clearFilters = () => {
     setQ("");
@@ -141,12 +164,17 @@ export default function WikiHome() {
       )}
       {records && mode === "feed" && records.length > 0 && records.map((r) => <RecordCard key={r.id} record={r} />)}
 
-      {records && mode === "calendar" && records.length === 0 && (
-        <div className="empty-state">
-          {hasActiveFilters ? "Ничего не найдено по этим условиям." : "Пока нет ни одной записи."}
-        </div>
+      {/* Календарь рисуется всегда, даже если в открытом месяце нет ни
+          одной записи - иначе пропадали бы и кнопки "Пред./След.", и
+          выбраться на месяц, где записи есть, стало бы нечем (records
+          здесь - только записи ТЕКУЩЕГО открытого в календаре месяца, не
+          всей Вики - пустой результат не значит "записей нет вообще"). */}
+      {records && mode === "calendar" && (
+        <DiaryCalendar
+          records={records}
+          onMonthChange={(year, month) => setCalendarCursor({ year, month })}
+        />
       )}
-      {records && mode === "calendar" && records.length > 0 && <DiaryCalendar records={records} />}
     </div>
   );
 }

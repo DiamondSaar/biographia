@@ -40,15 +40,20 @@ async function requestBytes(path) {
 export const api = {
   whoami: () => request("/whoami"),
   profile: () => request("/profile"),
-  // filters - {q, recordType, entityId, author}, все необязательны (см.
-  // WikiHome.jsx) - пробрасываются в /records/recent как есть, пустые
-  // (falsy) значения просто не попадают в query-строку.
+  // filters - {q, recordType, entityId, author, dateFrom, dateTo}, все
+  // необязательны (см. WikiHome.jsx) - пробрасываются в /records/recent как
+  // есть, пустые (falsy) значения просто не попадают в query-строку.
+  // dateFrom/dateTo (YYYY-MM-DD, dateTo исключая) - вид "Календарь":
+  // бэкенд в этом режиме игнорирует limit и отдаёт ВСЕ записи диапазона,
+  // не top-N последних (см. app/records/routes.py::records_recent).
   recentRecords: (limit = 10, filters = {}) => {
     const params = new URLSearchParams({ limit });
     if (filters.q) params.set("q", filters.q);
     if (filters.recordType) params.set("record_type", filters.recordType);
     if (filters.entityId) params.set("entity_id", filters.entityId);
     if (filters.author) params.set("author", filters.author);
+    if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+    if (filters.dateTo) params.set("date_to", filters.dateTo);
     return request(`/records/recent?${params.toString()}`);
   },
   myRecords: () => request("/records/mine"),
