@@ -5,6 +5,7 @@ import { uploadRecordAttachment } from "../crypto/attachmentUpload.js";
 import { usePersonalKey } from "../crypto/PersonalKeyContext.jsx";
 import { encryptText } from "../crypto/masterKey.ts";
 import { enqueue, isNetworkError } from "../offline/queue.js";
+import { extractImageFromClipboard } from "../utils/clipboardImage.js";
 import { useViewer } from "../ViewerContext.jsx";
 import { EntityPicker, OrgPicker } from "./DominexPickers.jsx";
 import { ACCESS_CLASSES, RECORD_TYPE_LABELS, ZONE_LABELS } from "./RecordCard.jsx";
@@ -212,8 +213,20 @@ export default function AddRecordForm({ onCreated, onCancel, fixedEntity = null,
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
         <div className="field">
-          <label>Текст</label>
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} />
+          <label>Текст (поддерживается markdown: **жирный**, # заголовок, списки; можно вставить картинку из буфера — Ctrl+V)</label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onPaste={(e) => {
+              const image = extractImageFromClipboard(e);
+              if (image) {
+                e.preventDefault();
+                setFiles((prev) => [...prev, image]);
+              }
+            }}
+            style={{ fontFamily: "ui-monospace, Consolas, monospace", fontSize: 13 }}
+            placeholder={"# Заголовок\n\nОбычный текст, **жирный**, список:\n- пункт 1\n- пункт 2"}
+          />
         </div>
 
         <div className="field">

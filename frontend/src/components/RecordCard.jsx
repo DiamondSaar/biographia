@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import AttachmentList from "./AttachmentList.jsx";
+import MarkdownBody from "./MarkdownBody.jsx";
 import UserPicker from "./UserPicker.jsx";
 import { usePersonalKey } from "../crypto/PersonalKeyContext.jsx";
 import { decryptText } from "../crypto/masterKey.ts";
@@ -93,8 +94,12 @@ function EditRecordForm({ record, canEdit, onDone, onCancel }) {
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <div className="field">
-        <label>Текст</label>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} />
+        <label>Текст (поддерживается markdown: **жирный**, # заголовок, списки)</label>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          style={{ fontFamily: "ui-monospace, Consolas, monospace", fontSize: 13 }}
+        />
       </div>
       {canEdit && record.zone !== "personal" && (
         <div className="field">
@@ -143,7 +148,7 @@ function VersionHistory({ recordId }) {
             v{v.version_number} · {v.author_username} · {new Date(v.created_at).toLocaleString("ru-RU")}
           </div>
           <div>{v.title}</div>
-          <div className="text-sm">{v.body}</div>
+          <MarkdownBody text={v.body} className="text-sm" />
         </li>
       ))}
     </ul>
@@ -190,7 +195,7 @@ function ProposalQueue({ recordId, onResolved }) {
             {p.author_username} предлагает · {new Date(p.created_at).toLocaleString("ru-RU")}
           </div>
           <div>{p.title}</div>
-          <div className="text-sm">{p.body}</div>
+          <MarkdownBody text={p.body} className="text-sm" />
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button
               type="button"
@@ -316,7 +321,7 @@ export default function RecordCard({ record: initialRecord, showEntityLink = tru
             </p>
           )}
           {!locked && failed && <div className="alert alert-error">Не удалось расшифровать запись.</div>}
-          {!locked && !failed && !showEdit && body && <p>{body}</p>}
+          {!locked && !failed && !showEdit && body && <MarkdownBody text={body} />}
           {showEntityLink && record.entity_id != null && (
             <p className="text-sm text-muted">
               Привязано к:{" "}
